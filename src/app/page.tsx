@@ -3,6 +3,7 @@
 import React, { useState, useMemo, useCallback, useRef, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { MapHeader, type MapStyleKey } from "@/components/map/MapHeader";
+import { MapBoundary, MapFallback } from "@/components/map/MapFallback";
 import { MapContainer } from "@/components/map/MapContainer";
 import type {
   HoveredDistrictInfo,
@@ -649,30 +650,42 @@ export default function Home() {
     <main className="relative w-screen h-screen overflow-hidden bg-slate-950">
       {/* Map Canvas (base layer) */}
       <div className="absolute inset-0 w-full h-full z-0">
-        <MapContainer
-          currentStyle={currentStyle}
-          isDark={isDark}
-          complaints={complaints}
-          selectedComplaint={selectedComplaint}
-          onSelectComplaint={handleSelectComplaint}
-          isReportMode={effectiveReportMode}
-          pendingCoord={pendingCoord}
-          onSetPendingCoord={handleSetPendingCoord}
-          targetCity={effectiveTargetCity}
-          onOpenDetail={handleOpenDetail}
-          upvotedIds={upvotedIds}
-          onToggleUpvote={handleToggleUpvote}
-          onShareComplaint={handleShareComplaint}
-          activeLayer={activeLayer}
-          onChangeLayer={setActiveLayer}
-          civicPolls={civicPolls}
-          onVotePoll={handleVotePoll}
-          userPollVotes={userPollVotes}
-          onOpenSosModal={() => setIsSosModalOpen(true)}
-          onSelectProvince={handleSelectMapProvince}
-          onSelectDistrict={handleSelectMapDistrict}
-          onSelectTambon={handleSelectMapTambon}
-        />
+        <MapBoundary fallback={
+          <MapFallback
+            onChooseCoordinates={handleSetPendingCoord}
+            onOpenGpsForm={() => {
+              setPendingCoord(null);
+              setIsReportMode(false);
+              clearReportQueryParam();
+              setIsFormOpen(true);
+            }}
+          />
+        }>
+          <MapContainer
+            currentStyle={currentStyle}
+            isDark={isDark}
+            complaints={complaints}
+            selectedComplaint={selectedComplaint}
+            onSelectComplaint={handleSelectComplaint}
+            isReportMode={effectiveReportMode}
+            pendingCoord={pendingCoord}
+            onSetPendingCoord={handleSetPendingCoord}
+            targetCity={effectiveTargetCity}
+            onOpenDetail={handleOpenDetail}
+            upvotedIds={upvotedIds}
+            onToggleUpvote={handleToggleUpvote}
+            onShareComplaint={handleShareComplaint}
+            activeLayer={activeLayer}
+            onChangeLayer={setActiveLayer}
+            civicPolls={civicPolls}
+            onVotePoll={handleVotePoll}
+            userPollVotes={userPollVotes}
+            onOpenSosModal={() => setIsSosModalOpen(true)}
+            onSelectProvince={handleSelectMapProvince}
+            onSelectDistrict={handleSelectMapDistrict}
+            onSelectTambon={handleSelectMapTambon}
+          />
+        </MapBoundary>
       </div>
 
       {/* Header */}
