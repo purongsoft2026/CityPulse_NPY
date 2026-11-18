@@ -26,6 +26,7 @@ interface MapHeaderProps {
   onToggleTheme: () => void;
   isSidebarOpen: boolean;
   onToggleSidebar: () => void;
+  onOpenNearbyPlaces: () => void;
   onSelectCity: (city: CityViewport) => void;
   onOpenReportForm: () => void;
   pendingCount: number;
@@ -58,6 +59,7 @@ export function MapHeader({
   isSidebarOpen,
   onToggleSidebar,
   onSelectCity,
+  onOpenNearbyPlaces,
   onOpenReportForm,
   pendingCount,
   onOpenCitizenHub,
@@ -274,6 +276,11 @@ export function MapHeader({
                   {filteredProvinces.length} / 77
                 </span>
               </div>
+
+              <button type="button" onClick={() => { setIsCityDropdownOpen(false); onOpenNearbyPlaces(); }}
+                className="mb-2 w-full rounded-xl bg-teal-700 px-3 py-2 text-left text-xs font-bold text-white">
+                ค้นหาใกล้ตัว · ปั๊มน้ำมัน ร้านค้า ร้านอาหาร
+              </button>
 
               <div className="relative mb-2">
                 <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-400 pointer-events-none">

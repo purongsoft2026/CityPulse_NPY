@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo, useCallback, useRef, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
+import { NearbyPlacesDialog } from "@/components/map/NearbyPlacesDialog";
 import { MapHeader, type MapStyleKey } from "@/components/map/MapHeader";
 import { MapBoundary, MapFallback } from "@/components/map/MapFallback";
 import { MapContainer } from "@/components/map/MapContainer";
@@ -174,6 +175,7 @@ export default function Home() {
   const [activeLayer, setActiveLayer] = useState<CityLayerKey>("complaints");
 
   // Emergency SOS Hub Modal
+  const [nearbyPlacesOpen, setNearbyPlacesOpen] = useState(false);
   const [isSosModalOpen, setIsSosModalOpen] = useState<boolean>(false);
   const [sosSearchCoord, setSosSearchCoord] = useState<[number, number] | undefined>();
 
@@ -744,6 +746,7 @@ export default function Home() {
         isSidebarOpen={isSidebarOpen}
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
         onSelectCity={handleSelectProvinceFromSearch}
+        onOpenNearbyPlaces={() => setNearbyPlacesOpen(true)}
         onOpenReportForm={handleOpenReportForm}
         pendingCount={pendingCount}
         onOpenCitizenHub={() => router.push("/citizen")}
@@ -859,6 +862,12 @@ export default function Home() {
         isOpen={!!shareComplaint}
         onClose={() => setShareComplaint(null)}
       />
+
+      {nearbyPlacesOpen && <NearbyPlacesDialog
+        center={pendingCoord ?? clickedTambonCity?.center ?? clickedDistrictCity?.center ??
+          clickedProvinceCity?.center ?? effectiveTargetCity?.center ?? DEFAULT_MAP_VIEW.center}
+        onClose={() => setNearbyPlacesOpen(false)}
+      />}
 
       {/* Emergency SOS Hub Modal */}
       {isSosModalOpen && <EmergencySosModal
