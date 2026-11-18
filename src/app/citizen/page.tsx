@@ -346,6 +346,9 @@ export default function CitizenHubPage() {
               <span className="hidden sm:inline">กลับหน้าแผนที่</span>
               <span className="sm:hidden">แผนที่</span>
             </Link>
+            <Link href="/track" className="shrink-0 text-xs font-bold text-sky-800 dark:text-sky-300">
+              ติดตามเรื่อง
+            </Link>
 
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-amber-500 to-rose-500 p-1 flex items-center justify-center shadow-sm shrink-0">

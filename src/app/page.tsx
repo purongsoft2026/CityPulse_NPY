@@ -12,6 +12,7 @@ import type {
   HoveredTambonInfo,
 } from "@/components/map/ProvinceBoundaryLayer";
 import { ComplaintSidebar } from "@/components/map/ComplaintSidebar";
+import { ReportReceipt } from "@/components/map/ReportReceipt";
 import { ComplaintForm } from "@/components/map/ComplaintForm";
 import { ComplaintDetailOffcanvas } from "@/components/map/ComplaintDetailOffcanvas";
 import { ShareCardModal } from "@/components/map/ShareCardModal";
@@ -191,6 +192,7 @@ export default function Home() {
   const [pendingCoord, setPendingCoord] = useState<[number, number] | null>(null);
 
   // Form state
+  const [receiptId, setReceiptId] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState<boolean>(false);
 
   // City fly-to & clicked province/district/tambon weather/info target
@@ -681,6 +683,7 @@ export default function Home() {
 
     const nextReports = [...myReportsArray, newId];
     persistMyReports(nextReports);
+    setReceiptId(newId);
 
     setPendingCoord(null);
     setIsFormOpen(false);
@@ -700,7 +703,7 @@ export default function Home() {
       data.isAnonymous ? "ส่งเรื่องแบบไม่ระบุตัวตนสำเร็จ!" : "ส่งเรื่องร้องเรียนสำเร็จ!",
       data.isAnonymous
         ? `ระบบบันทึกพิกัดโดยไม่เปิดเผยชื่อและเบอร์ติดต่อเรียบร้อย (+${earnedXp} XP)`
-        : `น้องอินสเปกเตอร์บันทึกพิกัดและส่งต่อข้อมูลเรียบร้อย (+${earnedXp} XP)`,
+        : `ระบบรับเรื่องและบันทึกพิกัดแล้ว (+${earnedXp} XP)`,
       "/images/mascot_camera.png"
     );
 
@@ -948,6 +951,8 @@ export default function Home() {
         }
         onSelectEmergencyPoint={handleSelectEmergencyPoint}
       />}
+
+      {receiptId && <ReportReceipt key={receiptId} id={receiptId} onClose={() => setReceiptId(null)} />}
 
       {/* Mascot Toast Notification Feedback */}
       {toastNotification && (
