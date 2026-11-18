@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useCallback, useSyncExternalStore } from "react";
+import React, { useState, useMemo, useCallback, useRef, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { MapHeader, type MapStyleKey } from "@/components/map/MapHeader";
 import { MapContainer } from "@/components/map/MapContainer";
@@ -534,10 +534,14 @@ export default function Home() {
     }
   };
 
-  const handleSubmitComplaint = (
+  const lastReportAttempt = useRef<{ payload: string; id: string } | null>(null);
+  const handleSubmitComplaint = async (
     data: Omit<ComplaintReport, "id" | "createdAt" | "status">
   ) => {
-    const newId = `complaint-${Date.now()}`;
+    const payload = JSON.stringify({ ...data, timeline: undefined });
+    const newId = lastReportAttempt.current?.payload === payload
+      ? lastReportAttempt.current.id : crypto.randomUUID();
+    lastReportAttempt.current = { payload, id: newId };
     const newComplaint: ComplaintReport = {
       ...data,
       id: newId,
@@ -550,7 +554,17 @@ export default function Home() {
         year: "numeric",
       }),
     };
-    persistComplaints([newComplaint, ...complaints]);
+    const response = await fetch("/api/reports", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(newComplaint),
+    }).catch(() => null);
+    if (!response?.ok) {
+      const error = await response?.json().catch(() => null);
+      showMascotToast(error?.error || "ส่งข้อมูลไม่สำเร็จ กรุณาลองใหม่");
+      return false;
+    }
+    lastReportAttempt.current = null;
+    persistComplaints([newComplaint, ...getComplaintsSnapshot()]);
 
     const nextUpvoted = new Set(upvotedIds);
     nextUpvoted.add(newId);

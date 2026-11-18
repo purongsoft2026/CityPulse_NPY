@@ -25,7 +25,7 @@ import {
 interface ComplaintFormProps {
   isOpen: boolean;
   pendingCoord: [number, number] | null;
-  onSubmit: (data: Omit<ComplaintReport, "id" | "createdAt" | "status">) => void;
+  onSubmit: (data: Omit<ComplaintReport, "id" | "createdAt" | "status">) => Promise<false | void>;
   onCancel: () => void;
   onRequestNewLocation: () => void;
   onSetPendingCoord?: (coord: [number, number]) => void;
@@ -310,7 +310,7 @@ export function ComplaintForm({
       minute: "2-digit",
     });
 
-    onSubmit({
+    const submitted = await onSubmit({
       title: title.trim(),
       description: description.trim(),
       categoryId,
@@ -338,7 +338,7 @@ export function ComplaintForm({
       ],
     });
 
-    resetForm();
+    if (submitted !== false) resetForm();
     setIsSubmitting(false);
   };
 

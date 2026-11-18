@@ -49,6 +49,8 @@ import { AdminAnalyticsCharts } from "@/components/admin/AdminAnalyticsCharts";
 
 type AdminTabKey = "cases" | "departments" | "provinces";
 
+const centralReportId = (id: string) => /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(id);
+
 const getServerComplaintsSnapshot = () => INITIAL_COMPLAINTS;
 const getServerNullSnapshot = () => null;
 const getUrlCaseSnapshot = () => getUrlSearchParamSnapshot("case");
@@ -81,10 +83,36 @@ export default function AdminPage() {
     router.replace(`/admin/login?next=${encodeURIComponent(currentPath)}`);
   }, [isHydrated, session, router]);
 
-  const complaints = useSyncExternalStore(
+  const localComplaints = useSyncExternalStore(
     subscribeStorageSync,
     getComplaintsSnapshot,
     getServerComplaintsSnapshot,
+  );
+  const [centralReports, setCentralReports] = useState<ComplaintReport[]>([]);
+  const [centralError, setCentralError] = useState(false);
+  useEffect(() => {
+    if (!session) return;
+    const controller = new AbortController();
+    const refresh = async () => {
+      try {
+        const response = await fetch("/api/admin/reports", { signal: controller.signal });
+        if (!response.ok) throw new Error("Failed to load reports");
+        const reports = await response.json();
+        if (!controller.signal.aborted) {
+          setCentralReports(reports);
+          setCentralError(false);
+        }
+      } catch {
+        if (!controller.signal.aborted) setCentralError(true);
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(refresh, 30000);
+    return () => { controller.abort(); window.clearInterval(timer); };
+  }, [session]);
+  const complaints = useMemo(
+    () => [...centralReports, ...localComplaints.filter((report) => !centralReportId(report.id))],
+    [centralReports, localComplaints],
   );
   const urlCaseId = useSyncExternalStore(
     subscribePopState,
@@ -149,32 +177,61 @@ export default function AdminPage() {
   };
 
   const persistComplaints = (data: ComplaintReport[]) => {
-    const ok = writeComplaintsStore(data);
+    const ok = writeComplaintsStore(data.filter((report) => !centralReportId(report.id)));
     if (!ok) {
       showToast("พื้นที่จัดเก็บบนเบราว์เซอร์เต็ม", "แนะนำให้ลบรูปหรือรีเซ็ตข้อมูลตัวอย่าง");
     }
   };
 
-  const handleSaveCase = (updated: ComplaintReport) => {
+  const updateCentralCase = async (updated: ComplaintReport) => {
+    const response = await fetch("/api/admin/reports", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updated),
+    }).catch(() => null);
+    if (!response?.ok) {
+      showToast("บันทึกฐานข้อมูลกลางไม่สำเร็จ กรุณาลองใหม่");
+      return false;
+    }
+    const saved: ComplaintReport = await response.json();
+    setCentralReports((reports) => reports.map((report) => report.id === saved.id ? saved : report));
+    return true;
+  };
+
+  const handleSaveCase = async (updated: ComplaintReport) => {
     if (!hasOfficerPermission(session?.officer, "manageCases")) {
       showToast("ไม่มีสิทธิ์แก้ไขเคส", "บัญชีนี้อยู่ในโหมดอ่านอย่างเดียว กรุณาติดต่อ Admin");
       return;
     }
     const nextList = complaints.map((c) => (c.id === updated.id ? updated : c));
-    persistComplaints(nextList);
+    if (centralReportId(updated.id)) {
+      if (!(await updateCentralCase(updated))) return;
+    } else {
+      persistComplaints(nextList);
+    }
     showToast(
       "บันทึกข้อมูลเรียบร้อยแล้ว",
       `ปรับปรุงข้อมูลเคส ${updated.id} และอัปเดตระบบแผนที่แล้ว`,
     );
   };
 
-  const handleDeleteCase = (caseId: string) => {
+  const handleDeleteCase = async (caseId: string) => {
     if (!hasOfficerPermission(session?.officer, "manageCases")) {
       showToast("ไม่มีสิทธิ์ลบเคส", "บัญชีนี้อยู่ในโหมดอ่านอย่างเดียว กรุณาติดต่อ Admin");
       return;
     }
     const nextList = complaints.filter((c) => c.id !== caseId);
-    persistComplaints(nextList);
+    if (centralReportId(caseId)) {
+      const response = await fetch(`/api/admin/reports?id=${encodeURIComponent(caseId)}`, {
+        method: "DELETE",
+      }).catch(() => null);
+      if (!response?.ok) {
+        showToast("ลบจากฐานข้อมูลกลางไม่สำเร็จ กรุณาลองใหม่");
+        return;
+      }
+      setCentralReports((reports) => reports.filter((report) => report.id !== caseId));
+    } else {
+      persistComplaints(nextList);
+    }
     setSelectedCaseId(null);
     showToast("ลบเคสเรียบร้อยแล้ว", `นำรายการ ${caseId} ออกจากระบบแล้ว`);
   };
@@ -387,7 +444,7 @@ export default function AdminPage() {
     );
   };
 
-  const handleQuickStatusChange = (
+  const handleQuickStatusChange = async (
     caseId: string,
     nextStatus: ComplaintStatus,
     e: React.MouseEvent,
@@ -438,7 +495,11 @@ export default function AdminPage() {
     };
 
     const nextList = complaints.map((c) => (c.id === caseId ? updated : c));
-    persistComplaints(nextList);
+    if (centralReportId(updated.id)) {
+      if (!(await updateCentralCase(updated))) return;
+    } else {
+      persistComplaints(nextList);
+    }
     showToast("เปลี่ยนสถานะสำเร็จ", `เคส ${caseId} เป็น "${statusLabels[nextStatus]}" แล้ว`);
   };
 
@@ -1777,6 +1838,7 @@ export default function AdminPage() {
       )}
 
       {/* Case Action Modal */}
+      {centralError && <p role="status" className="fixed bottom-2 left-2 rounded bg-amber-100 p-2 text-amber-950">โหลดข้อมูลแจ้งเหตุจากฐานข้อมูลกลางไม่ได้</p>}
       <AdminCaseModal
         complaint={selectedCase}
         isOpen={Boolean(selectedCase)}
