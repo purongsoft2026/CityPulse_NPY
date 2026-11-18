@@ -194,7 +194,7 @@ export default function Home() {
   const [isFormOpen, setIsFormOpen] = useState<boolean>(false);
 
   // City fly-to & clicked province/district/tambon weather/info target
-  const [complaintProvince, setComplaintProvince] = useState("นราธิวาส");
+  const [complaintProvince, setComplaintProvince] = useState("intake");
   const [targetCity, setTargetCity] = useState<CityViewport | null>(null);
   const [clickedProvinceCity, setClickedProvinceCity] = useState<CityViewport | null>(null);
   const [clickedDistrictCity, setClickedDistrictCity] = useState<CityViewport | null>(null);
@@ -214,6 +214,14 @@ export default function Home() {
     setDetailComplaintId(null);
     setDismissedUrlComplaint(true);
   }, []);
+
+  const handleShowReportOverview = () => {
+    setComplaintProvince("intake");
+    setSelectedComplaintId(null);
+    setDetailComplaintId(null);
+    setDismissedUrlComplaint(true);
+    setIsSidebarOpen(true);
+  };
 
   const handleSelectProvinceFromSearch = useCallback((city: CityViewport) => {
     const province = CITIES.find((item) => item.id === city.id);
@@ -417,7 +425,7 @@ export default function Home() {
   }, [displayedProvince]);
 
   const visibleComplaints = useMemo(() => {
-    const reports = new Map(complaints.filter((report) => report.province === displayedProvince)
+    const reports = new Map(complaints.filter((report) => displayedProvince !== "intake" && report.province === displayedProvince)
       .map((report) => [report.id, report]));
     if (linkedReport?.province === displayedProvince) reports.set(linkedReport.id, linkedReport);
     if (publicReports?.province === displayedProvince) {
@@ -805,6 +813,7 @@ export default function Home() {
         isSidebarOpen={isSidebarOpen}
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
         onSelectCity={handleSelectProvinceFromSearch}
+        onShowReportOverview={handleShowReportOverview}
         onOpenNearbyPlaces={() => setNearbyPlacesOpen(true)}
         onOpenReportForm={handleOpenReportForm}
         pendingCount={pendingCount}
@@ -821,7 +830,7 @@ export default function Home() {
       <ComplaintSidebar
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
-        province={displayedProvince}
+        province={displayedProvince === "intake" ? "รวมจังหวัดที่เปิดรับแจ้ง" : displayedProvince}
         reportLoadError={failedReportProvince === displayedProvince}
         complaints={visibleComplaints}
         selectedComplaint={selectedComplaint}

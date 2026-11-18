@@ -27,6 +27,7 @@ interface MapHeaderProps {
   isSidebarOpen: boolean;
   onToggleSidebar: () => void;
   onOpenNearbyPlaces: () => void;
+  onShowReportOverview: () => void;
   onSelectCity: (city: CityViewport) => void;
   onOpenReportForm: () => void;
   pendingCount: number;
@@ -59,6 +60,7 @@ export function MapHeader({
   isSidebarOpen,
   onToggleSidebar,
   onSelectCity,
+  onShowReportOverview,
   onOpenNearbyPlaces,
   onOpenReportForm,
   pendingCount,
@@ -280,6 +282,11 @@ export function MapHeader({
               <button type="button" onClick={() => { setIsCityDropdownOpen(false); onOpenNearbyPlaces(); }}
                 className="mb-2 w-full rounded-xl bg-teal-700 px-3 py-2 text-left text-xs font-bold text-white">
                 ค้นหาใกล้ตัว · ปั๊มน้ำมัน ร้านค้า ร้านอาหาร
+              </button>
+
+              <button type="button" onClick={() => { setIsCityDropdownOpen(false); onShowReportOverview(); }}
+                className="mb-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-left text-xs font-bold dark:border-slate-600">
+                รวมจังหวัดที่เปิดรับแจ้ง
               </button>
 
               <div className="relative mb-2">

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getAllowedProvinces } from "@/lib/report-provinces";
 import { THAILAND_PROVINCES } from "@/data/map-data";
 import { reportIdPattern, reportsRequest, toComplaint, type ReportRow } from "@/lib/maps-reports-db";
 
@@ -6,8 +7,9 @@ export async function GET(request: NextRequest) {
   const search = request.nextUrl.searchParams;
   const province = search.get("province") ?? "";
   const id = search.get("id");
+  const overview = province === "intake";
   const offset = Number(search.get("offset") ?? 0);
-  if ((id !== null ? !reportIdPattern.test(id) : !THAILAND_PROVINCES.includes(province)) ||
+  if ((id !== null ? !reportIdPattern.test(id) : !overview && !THAILAND_PROVINCES.includes(province)) ||
       !Number.isSafeInteger(offset) || offset < 0) {
     return NextResponse.json({ error: "ข้อมูลค้นหาไม่ถูกต้อง" }, { status: 400 });
   }
@@ -20,9 +22,17 @@ export async function GET(request: NextRequest) {
     offset: String(offset),
   });
   if (id) params.set("id", `eq.${id}`);
-  else params.set("province", `eq.${province}`);
+  else if (!overview) params.set("province", `eq.${province}`);
 
   try {
+    if (!id && overview) {
+      const allowed = await getAllowedProvinces();
+      if (allowed) {
+        const provinces = THAILAND_PROVINCES.filter((name) => allowed.includes(name));
+        if (!provinces.length) return NextResponse.json([], { headers: { "Cache-Control": "no-store" } });
+        params.set("province", `in.(${provinces.join(",")})`);
+      }
+    }
     const result = await reportsRequest(`?${params}`);
     const rows: ReportRow[] = await result.json();
     return NextResponse.json(rows.map((row) => toComplaint({
