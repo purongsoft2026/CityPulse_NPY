@@ -12,6 +12,7 @@ import {
 interface ComplaintSidebarProps {
   isOpen: boolean;
   onClose: () => void;
+  province: string;
   complaints: ComplaintReport[];
   selectedComplaint: ComplaintReport | null;
   onSelectComplaint: (c: ComplaintReport) => void;
@@ -47,6 +48,7 @@ const STATUS_CONFIG: Record<ComplaintStatus, { label: string; color: string; ico
 export function ComplaintSidebar({
   isOpen,
   onClose,
+  province,
   complaints,
   selectedComplaint,
   onSelectComplaint,
@@ -216,7 +218,7 @@ export function ComplaintSidebar({
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-600 dark:text-slate-300 font-semibold mt-0.5">
-                  ทั้งหมด {stats.total} รายการ
+                  {province} · {stats.total} รายการ
                 </p>
               </div>
               <button

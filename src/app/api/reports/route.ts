@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
           departmentId: text(data.departmentId, 80) },
       }),
     });
-    return NextResponse.json({ id: data.id }, { status: 201 });
+    return NextResponse.json({ id: data.id, province }, { status: 201 });
   } catch {
     return NextResponse.json({ error: "ติดต่อฐานข้อมูลไม่ได้ กรุณาลองส่งอีกครั้ง" }, { status: 503 });
   }

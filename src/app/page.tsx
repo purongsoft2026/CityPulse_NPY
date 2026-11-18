@@ -192,6 +192,7 @@ export default function Home() {
   const [isFormOpen, setIsFormOpen] = useState<boolean>(false);
 
   // City fly-to & clicked province/district/tambon weather/info target
+  const [complaintProvince, setComplaintProvince] = useState("นราธิวาส");
   const [targetCity, setTargetCity] = useState<CityViewport | null>(null);
   const [clickedProvinceCity, setClickedProvinceCity] = useState<CityViewport | null>(null);
   const [clickedDistrictCity, setClickedDistrictCity] = useState<CityViewport | null>(null);
@@ -204,11 +205,26 @@ export default function Home() {
     setTargetCity(city);
   }, []);
 
+  const changeComplaintProvince = useCallback((province: string) => {
+    if (!CITIES.some((city) => getProvinceName(city) === province)) return;
+    setComplaintProvince(province);
+    setSelectedComplaintId(null);
+    setDetailComplaintId(null);
+    setDismissedUrlComplaint(true);
+  }, []);
+
+  const handleSelectProvinceFromSearch = useCallback((city: CityViewport) => {
+    const province = CITIES.find((item) => item.id === city.id);
+    changeComplaintProvince(province ? getProvinceName(province) : city.region ?? "");
+    handleSelectTargetCity(city);
+  }, [changeComplaintProvince, handleSelectTargetCity]);
+
   const handleSelectMapDistrict = useCallback((district: HoveredDistrictInfo | null) => {
     if (!district) {
       setClickedDistrictCity(null);
       return;
     }
+    changeComplaintProvince(district.provinceTh);
     const shortDistrict = district.displayTh.replace(/^อำเภอ/, "อ.");
     setClickedDistrictCity({
       id: `dist-${district.id}`,
@@ -218,13 +234,14 @@ export default function Home() {
       center: district.center ?? [100.5018, 13.7563],
       zoom: 11,
     });
-  }, []);
+  }, [changeComplaintProvince]);
 
   const handleSelectMapTambon = useCallback((tambon: HoveredTambonInfo | null) => {
     if (!tambon) {
       setClickedTambonCity(null);
       return;
     }
+    changeComplaintProvince(tambon.provinceTh);
     const shortTambon = tambon.displayTh.replace(/^ตำบล/, "ต.");
     setClickedTambonCity({
       id: `tam-${tambon.id}`,
@@ -234,13 +251,14 @@ export default function Home() {
       center: tambon.center ?? [100.5018, 13.7563],
       zoom: 12,
     });
-  }, []);
+  }, [changeComplaintProvince]);
 
   const handleSelectMapProvince = useCallback((province: HoveredProvinceInfo | null) => {
     if (!province) {
       setClickedProvinceCity(null);
       return;
     }
+    changeComplaintProvince(province.nameTh);
     const matched = CITIES.find((c) => getProvinceName(c) === province.nameTh);
     if (matched) {
       setClickedProvinceCity(matched);
@@ -254,7 +272,7 @@ export default function Home() {
       center: province.center ?? [100.5018, 13.7563],
       zoom: 10,
     });
-  }, []);
+  }, [changeComplaintProvince]);
 
   // Citizen Hub & Member Auth Modal
   const citizenSession = useSyncExternalStore(
@@ -342,15 +360,23 @@ export default function Home() {
 
   // Derive active detail / selected complaint from ID & URL deep-link
   const activeUrlComplaintId = dismissedUrlComplaint ? null : urlComplaintId;
+  const linkedProvince = activeUrlComplaintId
+    ? complaints.find((report) => report.id === activeUrlComplaintId)?.province
+    : undefined;
+  const displayedProvince = linkedProvince ?? complaintProvince;
+  const visibleComplaints = useMemo(
+    () => complaints.filter((report) => report.province === displayedProvince),
+    [complaints, displayedProvince],
+  );
   const effectiveDetailId = detailComplaintId ?? activeUrlComplaintId;
   const detailComplaint = useMemo(
-    () => (effectiveDetailId ? complaints.find((c) => c.id === effectiveDetailId) ?? null : null),
-    [complaints, effectiveDetailId]
+    () => (effectiveDetailId ? visibleComplaints.find((c) => c.id === effectiveDetailId) ?? null : null),
+    [visibleComplaints, effectiveDetailId]
   );
   const selectedComplaint = useMemo(() => {
     const id = selectedComplaintId ?? activeUrlComplaintId;
-    return id ? complaints.find((c) => c.id === id) ?? null : null;
-  }, [complaints, selectedComplaintId, activeUrlComplaintId]);
+    return id ? visibleComplaints.find((c) => c.id === id) ?? null : null;
+  }, [visibleComplaints, selectedComplaintId, activeUrlComplaintId]);
 
   const effectiveTargetCity = useMemo<CityViewport | null>(() => {
     if (targetCity) return targetCity;
@@ -576,6 +602,11 @@ export default function Home() {
       showMascotToast(error?.error || "ส่งข้อมูลไม่สำเร็จ กรุณาลองใหม่");
       return false;
     }
+    const savedReport: { province?: string } | null = await response.json().catch(() => null);
+    if (savedReport?.province) {
+      newComplaint.province = savedReport.province;
+      changeComplaintProvince(savedReport.province);
+    }
     lastReportAttempt.current = null;
     persistComplaints([newComplaint, ...getComplaintsSnapshot()]);
 
@@ -640,7 +671,6 @@ export default function Home() {
   };
 
   const handleOpenDetail = (complaint: ComplaintReport) => {
-    setDismissedUrlComplaint(false);
     setDetailComplaintId(complaint.id);
   };
 
@@ -656,7 +686,7 @@ export default function Home() {
     setShareComplaint(complaint);
   };
 
-  const pendingCount = complaints.filter((c) => c.status === "pending").length;
+  const pendingCount = visibleComplaints.filter((c) => c.status === "pending").length;
 
   return (
     <main className="relative w-screen h-screen overflow-hidden bg-slate-950">
@@ -676,7 +706,7 @@ export default function Home() {
           <MapContainer
             currentStyle={currentStyle}
             isDark={isDark}
-            complaints={complaints}
+            complaints={visibleComplaints}
             selectedComplaint={selectedComplaint}
             onSelectComplaint={handleSelectComplaint}
             isReportMode={effectiveReportMode}
@@ -713,7 +743,7 @@ export default function Home() {
         onToggleTheme={handleToggleTheme}
         isSidebarOpen={isSidebarOpen}
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
-        onSelectCity={handleSelectTargetCity}
+        onSelectCity={handleSelectProvinceFromSearch}
         onOpenReportForm={handleOpenReportForm}
         pendingCount={pendingCount}
         onOpenCitizenHub={() => router.push("/citizen")}
@@ -729,7 +759,8 @@ export default function Home() {
       <ComplaintSidebar
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
-        complaints={complaints}
+        province={displayedProvince}
+        complaints={visibleComplaints}
         selectedComplaint={selectedComplaint}
         onSelectComplaint={handleSelectComplaint}
         onDeleteComplaint={handleDeleteComplaint}
