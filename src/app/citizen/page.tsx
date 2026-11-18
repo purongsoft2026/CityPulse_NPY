@@ -41,6 +41,7 @@ import {
   getCitizenSessionSnapshot,
   subscribeCitizenSession,
 } from "@/lib/citizen-auth";
+import { getMapsAuth } from "@/lib/maps-auth-client";
 
 type HistoryTabKey = "reports" | "upvotes" | "resolved";
 
@@ -159,6 +160,46 @@ export default function CitizenHubPage() {
     serverNull
   );
   const citizenMember = citizenSession?.member ?? null;
+  const citizenId = citizenMember?.id;
+  const [cloudHistory, setCloudHistory] = useState<{ owner: string; reports: ComplaintReport[] }>();
+  const [historyError, setHistoryError] = useState<string>();
+  useEffect(() => {
+    if (!citizenId) return;
+    const owner = citizenId;
+    const controller = new AbortController();
+    let refreshing = false;
+    async function loadHistory() {
+      if (refreshing) return;
+      refreshing = true;
+      try {
+        const { data } = await getMapsAuth().getSession();
+        if (!data.session || data.session.user.id !== owner) return;
+        const headers = { Authorization: `Bearer ${data.session.access_token}` };
+        const reports: ComplaintReport[] = [];
+        for (let offset = 0; ; offset += 50) {
+          const response = await fetch(`/api/reports?mine&offset=${offset}`, {
+            headers, signal: controller.signal,
+          });
+          if (!response.ok) throw new Error("History unavailable");
+          const page: ComplaintReport[] = await response.json();
+          reports.push(...page);
+          if (page.length < 50) break;
+        }
+        if (!controller.signal.aborted) {
+          setCloudHistory({ owner, reports });
+          setHistoryError(undefined);
+        }
+      } catch {
+        if (!controller.signal.aborted) setHistoryError(owner);
+      } finally {
+        refreshing = false;
+      }
+    }
+    void loadHistory();
+    const timer = window.setInterval(loadHistory, 30000);
+    return () => { controller.abort(); window.clearInterval(timer); };
+  }, [citizenId]);
+
 
   const [historyTab, setHistoryTab] = useState<HistoryTabKey>("reports");
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -199,8 +240,10 @@ export default function CitizenHubPage() {
   );
 
   const myReportsList = useMemo(
-    () => complaints.filter((c) => myReportIds.has(c.id)),
-    [complaints, myReportIds]
+    () => citizenId
+      ? (cloudHistory?.owner === citizenId ? cloudHistory.reports : [])
+      : complaints.filter((c) => myReportIds.has(c.id)),
+    [citizenId, cloudHistory, complaints, myReportIds]
   );
   const myUpvotedList = useMemo(
     () => complaints.filter((c) => upvotedIds.has(c.id)),
@@ -351,11 +394,15 @@ export default function CitizenHubPage() {
               <JKIcon name={isDark ? "sun" : "moon"} className="text-xs" />
             </button>
 
+            {citizenId && historyError === citizenId && <p role="status">โหลดประวัติไม่ได้</p>}
             {citizenMember ? (
               <button
                 type="button"
-                onClick={() => {
-                  clearCitizenSession();
+                onClick={async () => {
+                  try { await clearCitizenSession(); } catch {
+                    showNotice("ออกจากระบบไม่สำเร็จ", "กรุณาลองใหม่");
+                    return;
+                  }
                   showNotice(
                     "ออกจากระบบสมาชิกแล้ว",
                     "ยังสามารถสะสม XP และแจ้งเรื่องแบบไม่ระบุตัวตนได้ต่อ"
@@ -435,7 +482,7 @@ export default function CitizenHubPage() {
               <div className="min-w-0 flex-1">
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-[10px] font-black uppercase tracking-wide border border-white/30 mb-1.5">
                   <JKIcon name="award" className="text-yellow-200" />
-                  <span>{citizenMember ? "Verified Citizen Member" : "Citizen Gamification"}</span>
+                  <span>{citizenMember ? "สมาชิกพลเมือง" : "Citizen Gamification"}</span>
                 </div>
                 <h2 className="text-xl sm:text-2xl font-black leading-tight truncate">
                   {citizenMember ? citizenMember.displayName : "พลเมืองตื่นรู้"}

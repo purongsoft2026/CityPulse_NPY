@@ -45,6 +45,7 @@ import {
   subscribeOfficerSession,
 } from "@/lib/officer-auth";
 import { ReportProvinceSettings } from "@/components/admin/ReportProvinceSettings";
+import { ReportEventHistory } from "@/components/admin/ReportEventHistory";
 import { AdminCaseModal } from "@/components/admin/AdminCaseModal";
 import { AdminAnalyticsCharts } from "@/components/admin/AdminAnalyticsCharts";
 
@@ -678,6 +679,7 @@ export default function AdminPage() {
       {/* Main Content (Full-Width Dashboard Canvas) */}
       <main className="relative z-10 flex-1 w-full px-4 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-5">
         <ReportProvinceSettings />
+        <ReportEventHistory />
         {/* iOS Control Center Filter & Navigation Deck */}
         <div className={`p-4 sm:p-5 rounded-[28px] flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-4 ${iosCardClass}`}>
           <div className="flex flex-wrap items-center gap-2.5">

@@ -64,6 +64,7 @@ import {
   getCitizenSessionSnapshot,
   subscribeCitizenSession,
 } from "@/lib/citizen-auth";
+import { getMapsAuth } from "@/lib/maps-auth-client";
 
 function subscribeDesktopBreakpoint(callback: () => void) {
   if (typeof window === "undefined") return () => {};
@@ -557,8 +558,17 @@ export default function Home() {
         year: "numeric",
       }),
     };
+    const headers = new Headers({ "Content-Type": "application/json" });
+    if (citizenMember) {
+      const { data, error } = await getMapsAuth().getSession();
+      if (error || !data.session) {
+        showMascotToast("กรุณาเข้าสู่ระบบอีกครั้งก่อนส่งเรื่อง");
+        return false;
+      }
+      headers.set("Authorization", `Bearer ${data.session.access_token}`);
+    }
     const response = await fetch("/api/reports", {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST", headers,
       body: JSON.stringify(newComplaint),
     }).catch(() => null);
     if (!response?.ok) {

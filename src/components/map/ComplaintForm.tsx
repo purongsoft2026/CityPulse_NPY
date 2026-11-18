@@ -921,7 +921,7 @@ export function ComplaintForm({
                         โหมดไม่ระบุตัวตน (ปกปิดข้อมูลส่วนตัว)
                       </p>
                       <p className="text-[11px] text-amber-700/90 dark:text-amber-200/80 mt-0.5 leading-relaxed">
-                        ระบบจะไม่บันทึกหรือแสดงชื่อและเบอร์ติดต่อของคุณบนแผนที่สาธารณะ โดยแสดงเป็น &ldquo;ผู้แจ้งไม่ระบุตัวตน&rdquo;
+                        บนแผนที่สาธารณะ ระบบปิดชื่อและเบอร์ติดต่อ และจะแสดงเป็น &ldquo;ผู้แจ้งไม่ระบุตัวตน&rdquo;
                       </p>
                     </div>
                   </div>
@@ -999,6 +999,9 @@ export function ComplaintForm({
               </div>
             </div>
 
+            <p className="px-6 pb-2 text-xs text-slate-600 dark:text-slate-300">
+              เมื่อส่งเรื่อง ระบบจะบันทึกเวลา IP และข้อมูลเบราว์เซอร์ที่ได้รับให้ผู้ดูแลตรวจสอบ หากเข้าสู่ระบบ เรื่องจะผูกกับบัญชีเพื่อให้ดูย้อนหลังได้
+            </p>
             {/* Fixed Sticky Footer */}
             <div className="flex-shrink-0 px-6 py-4 border-t border-slate-900/[0.06] dark:border-white/[0.08] bg-white/55 dark:bg-slate-950/35 flex gap-3">
               <button

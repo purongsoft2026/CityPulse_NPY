@@ -1,3 +1,4 @@
+import { getMapsAuth, toCitizenMember } from "./maps-auth-client";
 import { inferProvinceFromCoord, CITIES, getProvinceName } from "@/data/map-data";
 
 export interface CitizenMember {
@@ -21,7 +22,6 @@ export interface CitizenSession {
 }
 
 const CITIZEN_ACCOUNTS_KEY = "citypulse-citizen-accounts";
-const CITIZEN_SESSION_KEY = "citypulse-citizen-session";
 const CITIZEN_AUTH_SYNC_EVENT = "citypulse-citizen-auth-sync";
 
 export const CITIZEN_AVATAR_POSES = [
@@ -31,7 +31,6 @@ export const CITIZEN_AVATAR_POSES = [
   { id: "hero", label: "ฮีโร่เมือง", src: "/images/mascot_success.png" },
 ] as const;
 
-let cachedSessionRaw: string | null = null;
 let cachedSessionParsed: CitizenSession | null = null;
 const EMPTY_CITIZENS: CitizenMember[] = [];
 let cachedCitizensRaw: string | null | undefined = undefined;
@@ -128,94 +127,30 @@ function toPublicMember(cred: StoredCitizenCredential): CitizenMember {
   };
 }
 
+let sessionSubscriptionStarted = false;
+
 export function getCitizenSessionSnapshot(): CitizenSession | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(CITIZEN_SESSION_KEY);
-    if (raw === cachedSessionRaw) {
-      return cachedSessionParsed;
-    }
-    cachedSessionRaw = raw;
-    if (!raw) {
-      cachedSessionParsed = null;
-      return null;
-    }
-    const parsed: unknown = JSON.parse(raw);
-    if (
-      parsed &&
-      typeof parsed === "object" &&
-      "member" in parsed &&
-      parsed.member &&
-      typeof parsed.member === "object" &&
-      "id" in parsed.member
-    ) {
-      cachedSessionParsed = parsed as CitizenSession;
-      return cachedSessionParsed;
-    }
-    cachedSessionParsed = null;
-    return null;
-  } catch {
-    return null;
-  }
+  return cachedSessionParsed;
 }
 
 export function subscribeCitizenSession(onStoreChange: () => void): () => void {
-  if (typeof window === "undefined") return () => {};
-  const handleStorage = (e: StorageEvent) => {
-    if (e.key === null || e.key === CITIZEN_SESSION_KEY || e.key === CITIZEN_ACCOUNTS_KEY) {
-      onStoreChange();
-    }
-  };
-  const handleCustom = () => onStoreChange();
-  window.addEventListener("storage", handleStorage);
-  window.addEventListener(CITIZEN_AUTH_SYNC_EVENT, handleCustom);
-  return () => {
-    window.removeEventListener("storage", handleStorage);
-    window.removeEventListener(CITIZEN_AUTH_SYNC_EVENT, handleCustom);
-  };
-}
-
-export function createCitizenSession(member: CitizenMember): CitizenSession {
-  const session: CitizenSession = {
-    member,
-    loggedInAt: new Date().toISOString(),
-  };
-  if (typeof window !== "undefined") {
-    try {
-      const serialized = JSON.stringify(session);
-      window.localStorage.setItem(CITIZEN_SESSION_KEY, serialized);
-      cachedSessionRaw = serialized;
-      cachedSessionParsed = session;
+  window.addEventListener(CITIZEN_AUTH_SYNC_EVENT, onStoreChange);
+  if (!sessionSubscriptionStarted) {
+    sessionSubscriptionStarted = true;
+    getMapsAuth().onAuthStateChange((_event, session) => {
+      cachedSessionParsed = session ? {
+        member: toCitizenMember(session.user),
+        loggedInAt: session.user.last_sign_in_at ?? session.user.created_at,
+      } : null;
       notifyCitizenAuthSync();
-    } catch {
-      // ignore storage errors
-    }
+    });
   }
-  return session;
+  return () => window.removeEventListener(CITIZEN_AUTH_SYNC_EVENT, onStoreChange);
 }
 
-export function clearCitizenSession(): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.removeItem(CITIZEN_SESSION_KEY);
-    cachedSessionRaw = null;
-    cachedSessionParsed = null;
-    notifyCitizenAuthSync();
-  } catch {
-    // ignore storage errors
-  }
-}
-
-export function authenticateCitizenMember(
-  email: string,
-  password: string
-): CitizenMember | null {
-  const normalized = email.trim().toLowerCase();
-  const match = getAllCitizenAccounts().find(
-    (acc) => acc.email.toLowerCase() === normalized && acc.password === password
-  );
-  if (!match || match.status === "suspended") return null;
-  return toPublicMember(match);
+export async function clearCitizenSession(): Promise<void> {
+  const { error } = await getMapsAuth().signOut({ scope: "local" });
+  if (error) throw error;
 }
 
 export interface RegisterCitizenInput {
@@ -227,9 +162,6 @@ export interface RegisterCitizenInput {
   avatarPose?: string;
 }
 
-export type RegisterCitizenResult =
-  | { ok: true; session: CitizenSession }
-  | { ok: false; error: string };
 
 function persistNewCitizenAccount(
   input: RegisterCitizenInput
@@ -323,12 +255,5 @@ export function deleteCitizenAccountByAdmin(citizenId: string): boolean {
   const next = registered.filter((acc) => acc.id !== citizenId);
   if (next.length === registered.length) return false;
   return saveRegisteredAccounts(next);
-}
-
-export function registerCitizenMember(input: RegisterCitizenInput): RegisterCitizenResult {
-  const res = persistNewCitizenAccount(input);
-  if (!res.ok) return res;
-  const session = createCitizenSession(res.member);
-  return { ok: true, session };
 }
 

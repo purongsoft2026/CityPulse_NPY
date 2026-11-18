@@ -5,11 +5,10 @@ import { JKIcon } from "@/components/ui/jk-icon";
 import { PROVINCE_GROUPS } from "@/data/map-data";
 import {
   CITIZEN_AVATAR_POSES,
-  authenticateCitizenMember,
-  createCitizenSession,
-  registerCitizenMember,
   type CitizenMember,
 } from "@/lib/citizen-auth";
+
+import { getMapsAuth, toCitizenMember } from "@/lib/maps-auth-client";
 
 export type CitizenAuthTab = "login" | "register";
 
@@ -75,6 +74,7 @@ function CitizenAuthModalInner({
   const [avatarPose, setAvatarPose] = useState<string>(CITIZEN_AVATAR_POSES[0].src);
   const [regError, setRegError] = useState("");
 
+  const [loginNotice, setLoginNotice] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
@@ -87,19 +87,24 @@ function CitizenAuthModalInner({
     }
 
     setIsSubmitting(true);
-    await new Promise((r) => setTimeout(r, 200));
-
-    const member = authenticateCitizenMember(loginEmail, loginPassword);
-    setIsSubmitting(false);
-
-    if (!member) {
-      setLoginError("อีเมลหรือรหัสผ่านไม่ถูกต้อง กรุณาตรวจสอบข้อมูลหรือสมัครสมาชิกใหม่");
-      return;
+    try {
+      const { data, error } = await getMapsAuth().signInWithPassword({
+        email: loginEmail.trim(),
+        password: loginPassword,
+      });
+      if (error || !data.user) {
+        setLoginError(error?.code === "email_not_confirmed"
+          ? "กรุณายืนยันอีเมลก่อนเข้าสู่ระบบ"
+          : "เข้าสู่ระบบไม่สำเร็จ กรุณาตรวจสอบอีเมลและรหัสผ่าน");
+        return;
+      }
+      onAuthSuccess?.(toCitizenMember(data.user), "login");
+      onClose();
+    } catch {
+      setLoginError("ติดต่อระบบไม่ได้ กรุณาลองใหม่");
+    } finally {
+      setIsSubmitting(false);
     }
-
-    createCitizenSession(member);
-    onAuthSuccess?.(member, "login");
-    onClose();
   };
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
@@ -124,26 +129,34 @@ function CitizenAuthModalInner({
     }
 
     setIsSubmitting(true);
-    await new Promise((r) => setTimeout(r, 220));
-
-    const result = registerCitizenMember({
-      displayName,
-      email: regEmail,
-      password: regPassword,
-      phone: regPhone,
-      homeProvince,
-      avatarPose,
-    });
-
-    setIsSubmitting(false);
-
-    if (!result.ok) {
-      setRegError(result.error);
-      return;
+    try {
+      const { data, error } = await getMapsAuth().signUp({
+        email: regEmail.trim(),
+        password: regPassword,
+        options: {
+          emailRedirectTo: new URL("/citizen", window.location.origin).href,
+          data: { displayName: displayName.trim(), phone: regPhone.trim(), homeProvince, avatarPose },
+        },
+      });
+      if (error || !data.user) {
+        setRegError(error?.code === "weak_password"
+          ? "รหัสผ่านไม่ผ่านข้อกำหนด กรุณาใช้รหัสผ่านที่คาดเดายากขึ้น"
+          : "สมัครไม่สำเร็จ กรุณาตรวจสอบอีเมลหรือลองใหม่ภายหลัง");
+        return;
+      }
+      if (!data.session) {
+        setActiveTab("login");
+        setLoginEmail(regEmail.trim());
+        setLoginNotice("หากอีเมลนี้สมัครได้ ระบบจะส่งลิงก์ยืนยันให้ กรุณาตรวจกล่องจดหมายแล้วกลับมาเข้าสู่ระบบ");
+        return;
+      }
+      onAuthSuccess?.(toCitizenMember(data.user), "register");
+      onClose();
+    } catch {
+      setRegError("ติดต่อระบบไม่ได้ กรุณาลองใหม่");
+    } finally {
+      setIsSubmitting(false);
     }
-
-    onAuthSuccess?.(result.session.member, "register");
-    onClose();
   };
 
   return (
@@ -227,7 +240,8 @@ function CitizenAuthModalInner({
         <div className="p-5 sm:p-6 overflow-y-auto flex-1">
           {activeTab === "login" ? (
             <form onSubmit={handleLoginSubmit} className="space-y-4" noValidate>
-              {loginError && (
+              {loginNotice && <p role="status" className="text-sm text-emerald-700 dark:text-emerald-300">{loginNotice}</p>}
+                {loginError && (
                 <div
                   role="alert"
                   className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-500/15 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-200 text-xs font-bold flex items-start gap-2"
