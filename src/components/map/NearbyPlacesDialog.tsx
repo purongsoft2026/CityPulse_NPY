@@ -93,6 +93,12 @@ export function NearbyPlacesDialog({ center, onClose }: {
         </div>
         {!visible && <p role="status" className="text-sm">กำลังค้นหาสถานที่…</p>}
         {visible?.error && <p role="alert" className="text-sm">{visible.error} <button type="button" onClick={() => setRetry(retry + 1)} className="underline">ลองใหม่</button></p>}
+        {visible?.error && (
+          <a target="_blank" rel="noreferrer" className="inline-block text-sm font-semibold text-teal-700 underline dark:text-teal-300"
+            href={`https://www.google.com/maps/search/${encodeURIComponent(NEARBY_PLACE_CATEGORIES[category])}/@${lat},${lng},14z`}>
+            ค้นหาหมวดนี้ใน Google Maps
+          </a>
+        )}
         {visible && !visible.error && visible.places.length === 0 && <p className="text-sm">ไม่พบสถานที่ในรัศมีที่เลือก</p>}
         <ul className="divide-y divide-slate-200 dark:divide-slate-700">
           {visible?.places.map((place) => (
