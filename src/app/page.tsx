@@ -751,6 +751,10 @@ export default function Home() {
       <div className="absolute inset-0 w-full h-full z-0">
         <MapBoundary fallback={
           <MapFallback
+            targetCity={effectiveTargetCity}
+            reports={visibleComplaints}
+            isReportMode={effectiveReportMode}
+            onSelectReport={handleOpenDetail}
             onChooseCoordinates={handleSetPendingCoord}
             onOpenGpsForm={() => {
               setPendingCoord(null);

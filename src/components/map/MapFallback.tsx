@@ -1,6 +1,9 @@
 "use client";
 
-import { Component, useState, type FormEvent, type ReactNode } from "react";
+import { Component, useCallback, useState, type FormEvent, type ReactNode } from "react";
+
+import type { CityViewport, ComplaintReport } from "@/data/map-data";
+import { RasterFallbackMap } from "./RasterFallbackMap";
 
 type MapBoundaryProps = { children: ReactNode; fallback: ReactNode };
 
@@ -19,11 +22,22 @@ export class MapBoundary extends Component<MapBoundaryProps, { failed: boolean }
 export function MapFallback({
   onChooseCoordinates,
   onOpenGpsForm,
+  targetCity,
+  reports,
+  isReportMode,
+  onSelectReport,
 }: {
   onChooseCoordinates: (coordinates: [number, number]) => void;
   onOpenGpsForm: () => void;
+  targetCity: CityViewport | null;
+  reports: ComplaintReport[];
+  isReportMode: boolean;
+  onSelectReport: (report: ComplaintReport) => void;
 }) {
   const [error, setError] = useState("");
+  const [unavailable, setUnavailable] = useState(false);
+  const [manual, setManual] = useState(false);
+  const showUnavailable = useCallback(() => setUnavailable(true), []);
 
   function submitCoordinates(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -41,10 +55,27 @@ export function MapFallback({
     onChooseCoordinates([longitude, latitude]);
   }
 
+  if (!unavailable && !manual) {
+    return (
+      <>
+        <RasterFallbackMap targetCity={targetCity} reports={reports} isReportMode={isReportMode}
+          onChooseCoordinates={onChooseCoordinates} onSelectReport={onSelectReport}
+          onUnavailable={showUnavailable} />
+        <div className="absolute bottom-16 right-3 z-10 flex flex-wrap items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs text-slate-900 shadow">
+          <span>{isReportMode ? "แตะจุดเกิดเหตุบนแผนที่" : "แผนที่ 2 มิติ"}</span>
+          <button type="button" className="font-semibold underline" onClick={onOpenGpsForm}>ใช้ GPS</button>
+          <button type="button" className="font-semibold underline" onClick={() => setManual(true)}>กรอกพิกัด</button>
+        </div>
+      </>
+    );
+  }
+
   return (
     <section className="absolute inset-0 flex items-center justify-center px-4 py-28 md:pl-80">
       <div className="max-h-full w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-5 text-slate-900 shadow-lg">
-        <h2 className="text-lg font-bold">แผนที่เปิดไม่ได้</h2>
+        <h2 className="text-lg font-bold">{unavailable ? "โหลดแผนที่ไม่ได้" : "กรอกพิกัดจุดเกิดเหตุ"}</h2>
+        {manual && !unavailable && <button type="button" className="mt-2 text-sm font-semibold underline"
+          onClick={() => setManual(false)}>กลับแผนที่</button>}
         <p className="mt-2 text-sm text-slate-600">
           คุณยังแจ้งเหตุได้โดยใช้ GPS หรือกรอกพิกัดสถานที่เกิดเหตุ
         </p>
