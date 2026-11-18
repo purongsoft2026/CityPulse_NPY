@@ -15,6 +15,7 @@ import {
 import { JKIcon } from "@/components/ui/jk-icon";
 import {
   COMPLAINT_CATEGORIES,
+  DEFAULT_MAP_VIEW,
   inferProvinceFromCoord,
   type ComplaintReport,
   type CityViewport,
@@ -164,9 +165,9 @@ export function MapContainer({
   const mapRef = useRef<MapLibreGL.Map | null>(null);
 
   const [viewport, setViewport] = useState({
-    lng: 100.5231,
-    lat: 13.7367,
-    zoom: 12.5,
+    lng: DEFAULT_MAP_VIEW.center[0],
+    lat: DEFAULT_MAP_VIEW.center[1],
+    zoom: DEFAULT_MAP_VIEW.zoom,
     bearing: 0,
     pitch: 0,
   });
@@ -766,8 +767,8 @@ export function MapContainer({
     <div className="relative w-full h-full">
       <Map
         ref={mapRef}
-        center={[100.5231, 13.7367]}
-        zoom={12.5}
+        center={DEFAULT_MAP_VIEW.center}
+        zoom={DEFAULT_MAP_VIEW.zoom}
         styles={styleUrls}
         theme={isDark ? "dark" : "light"}
         onViewportChange={handleViewportChange}

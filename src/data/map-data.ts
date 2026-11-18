@@ -71,6 +71,15 @@ export const CITY_WEATHER: Record<string, CityWeatherData> = {
   },
 };
 
+export const DEFAULT_MAP_VIEW: CityViewport = {
+  id: "nwt-municipality",
+  name: "เทศบาลเมืองนราธิวาส",
+  country: "Thailand",
+  region: "ภาคใต้",
+  center: [101.8223403, 6.427896005],
+  zoom: 14,
+};
+
 export const CITIES: CityViewport[] = [
   // ภาคกลาง (22 จังหวัด)
   { id: "bkk", name: "กรุงเทพมหานคร (Bangkok)", country: "Thailand", region: "ภาคกลาง", center: [100.5018, 13.7563], zoom: 12 },

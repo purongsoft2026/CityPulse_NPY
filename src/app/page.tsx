@@ -28,6 +28,7 @@ import {
   type CitizenXpExtras,
   CITIZEN_XP_REWARDS,
   CITIES,
+  DEFAULT_MAP_VIEW,
   calculateCitizenStats,
   deriveComplaintXpMetrics,
   getProvinceName,
@@ -762,7 +763,7 @@ export default function Home() {
       <div className="fixed bottom-20 sm:bottom-[74px] right-3 sm:right-4 z-20 pointer-events-auto max-w-[calc(100vw-24px)]">
         <WeatherCard
           currentCity={
-            clickedTambonCity ?? clickedDistrictCity ?? clickedProvinceCity ?? effectiveTargetCity
+            clickedTambonCity ?? clickedDistrictCity ?? clickedProvinceCity ?? effectiveTargetCity ?? DEFAULT_MAP_VIEW
           }
           defaultMinimized={true}
         />
@@ -823,7 +824,7 @@ export default function Home() {
         isOpen={isSosModalOpen}
         onClose={() => { setIsSosModalOpen(false); setSosSearchCoord(undefined); }}
         currentCoord={
-          sosSearchCoord ?? pendingCoord ?? (effectiveTargetCity ? effectiveTargetCity.center : [100.5018, 13.7563])
+          sosSearchCoord ?? pendingCoord ?? effectiveTargetCity?.center ?? DEFAULT_MAP_VIEW.center
         }
         onSelectEmergencyPoint={handleSelectEmergencyPoint}
       />
