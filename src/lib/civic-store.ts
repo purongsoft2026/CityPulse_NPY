@@ -50,7 +50,8 @@ export function getComplaintsSnapshot(): ComplaintReport[] {
       const stored: unknown = JSON.parse(raw);
       if (Array.isArray(stored)) {
         const initMap = new Map(INITIAL_COMPLAINTS.map((c) => [c.id, c]));
-        cachedComplaintsParsed = stored.map((entry) => {
+        const complaints = stored as ComplaintReport[];
+        cachedComplaintsParsed = complaints.filter((entry) => !/^complaint-(?:[1-9]|1[0-3])$/.test(entry.id)).map((entry) => {
           const item = entry as Partial<ComplaintReport> & { id: string };
           const init = initMap.get(item.id);
           const categoryId = item.categoryId ?? init?.categoryId ?? "other";
@@ -180,7 +181,7 @@ export function getCivicPollsSnapshot(): CivicPoll[] {
     if (raw) {
       const parsed: unknown = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        cachedPollsParsed = parsed as CivicPoll[];
+        cachedPollsParsed = (parsed as CivicPoll[]).filter((poll) => !/^poll-[1-4]$/.test(poll.id));
         return cachedPollsParsed;
       }
     }
