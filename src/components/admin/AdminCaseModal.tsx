@@ -1,5 +1,6 @@
 "use client";
 
+import { AgencyReferralPanel } from "./AgencyReferralPanel";
 import React, { useState, useEffect, useRef, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { JKIcon } from "@/components/ui/jk-icon";
@@ -487,6 +488,10 @@ function AdminCaseModalInner({
               </div>
             </div>
           </div>
+
+          {/^[a-f0-9-]{36}$/i.test(complaint.id) && (
+            <AgencyReferralPanel key={complaint.id} complaint={complaint} />
+          )}
 
           {/* Description & Reporter */}
           <div className="p-4 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 space-y-3">

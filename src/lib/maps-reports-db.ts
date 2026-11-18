@@ -6,7 +6,7 @@ export function reportsRequest(query: string, init?: RequestInit) {
   return mapsDbRequest("maps_reports", query, init);
 }
 
-export async function mapsDbRequest(table: "maps_reports" | "maps_report_settings" | "maps_report_events", query: string, init?: RequestInit) {
+export async function mapsDbRequest(table: "maps_reports" | "maps_report_settings" | "maps_report_events" | "maps_agency_referrals", query: string, init?: RequestInit) {
   const url = process.env.MAPS_SUPABASE_URL;
   const key = process.env.MAPS_SUPABASE_SECRET_KEY;
   if (!url || !key) throw new Error("Database is not configured");
