@@ -181,7 +181,17 @@ export function getCivicPollsSnapshot(): CivicPoll[] {
     if (raw) {
       const parsed: unknown = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        cachedPollsParsed = (parsed as CivicPoll[]).filter((poll) => !/^poll-[1-4]$/.test(poll.id));
+        const polls = parsed as CivicPoll[];
+        cachedPollsParsed = polls.filter((poll) => !/^poll-[1-4]$/.test(poll.id));
+        if (cachedPollsParsed.length !== polls.length) {
+          const cleaned = JSON.stringify(cachedPollsParsed);
+          try {
+            window.localStorage.setItem(POLLS_STORAGE_KEY, cleaned);
+            cachedPollsRaw = cleaned;
+          } catch {
+            // Keep the cleaned list in memory if browser storage is unavailable.
+          }
+        }
         return cachedPollsParsed;
       }
     }
