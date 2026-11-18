@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { JKIcon } from "@/components/ui/jk-icon";
 import {
   formatDistance,
@@ -15,6 +15,7 @@ import {
 interface EmergencySosModalProps {
   isOpen: boolean;
   onClose: () => void;
+  preferGps?: boolean;
   currentCoord?: [number, number]; // [lng, lat]
   onSelectEmergencyPoint?: (point: EmergencyPoint) => void;
 }
@@ -91,6 +92,7 @@ const POINT_META: Record<
 export function EmergencySosModal({
   isOpen,
   onClose,
+  preferGps = true,
   currentCoord = [100.5231, 13.7367],
   onSelectEmergencyPoint,
 }: EmergencySosModalProps) {
@@ -170,20 +172,15 @@ export function EmergencySosModal({
         point: pt,
         distanceKm: haversineDistanceKm(activeCoord, pt.coordinates),
       }))
-      .sort((a, b) => a.distanceKm - b.distanceKm);
+      .sort((a, b) => Number(!!a.point.locationApproximate) - Number(!!b.point.locationApproximate) || a.distanceKm - b.distanceKm);
 
     if (pointFilter === "all") return withDistance;
     return withDistance.filter((item) => item.point.type === pointFilter);
   }, [activePoints, activeCoord, pointFilter]);
 
-  if (!isOpen) return null;
-
-  const latStr = activeCoord[1].toFixed(5);
-  const lngStr = activeCoord[0].toFixed(5);
-  const mapsLink = `https://www.google.com/maps?q=${latStr},${lngStr}`;
-  const sosMessage = `ขอความช่วยเหลือฉุกเฉิน ขณะนี้อยู่ที่พิกัด ${latStr}, ${lngStr} (${mapsLink}) กรุณาส่งทีมช่วยเหลือด่วน`;
-
-  const handleLocateGps = () => {
+  const requestedGps = useRef(false);
+  const handleLocateGps = useCallback(() => {
+    requestedGps.current = true;
     if (!navigator.geolocation) {
       setGpsStatus("error");
       setGpsError("เบราว์เซอร์ไม่รองรับการระบุตำแหน่ง GPS");
@@ -197,12 +194,31 @@ export function EmergencySosModal({
         setGpsStatus("locked");
       },
       () => {
+        setGpsCoord(null);
         setGpsStatus("error");
         setGpsError("ไม่สามารถเข้าถึง GPS ได้ กรุณาตรวจสอบสิทธิ์ตำแหน่ง");
       },
-      { enableHighAccuracy: true, timeout: 8000 }
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 15000 }
     );
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen || !preferGps || !navigator.permissions) return;
+    let cancelled = false;
+    void navigator.permissions.query({ name: "geolocation" }).then(({ state }) => {
+      if (!cancelled && state === "granted" && !requestedGps.current) handleLocateGps();
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [isOpen, preferGps, handleLocateGps]);
+
+  if (!isOpen) return null;
+
+  const latStr = activeCoord[1].toFixed(5);
+  const lngStr = activeCoord[0].toFixed(5);
+  const mapsLink = `https://www.google.com/maps?q=${latStr},${lngStr}`;
+  const sosMessage = `ขอความช่วยเหลือฉุกเฉิน ขณะนี้อยู่ที่พิกัด ${latStr}, ${lngStr} (${mapsLink}) กรุณาส่งทีมช่วยเหลือด่วน`;
+
+
 
   const handleCopyCoord = async () => {
     try {
@@ -462,7 +478,9 @@ export function EmergencySosModal({
               {sortedPoints.length === 0 && !isLoadingPoints && (
                 <div className="p-4 rounded-2xl border border-dashed border-slate-200 dark:border-white/15 text-center space-y-2 bg-slate-50/70 dark:bg-white/5">
                   <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                    ไม่พบจุดประเภทนี้ในรัศมี {searchRadiusKm} กม. รอบพิกัดปัจจุบัน
+                    {nearbyState?.data.ok === false
+                      ? "โหลดข้อมูลพื้นที่ไม่ได้ กรุณากดอัปเดตอีกครั้ง"
+                      : `ไม่พบจุดประเภทนี้ในรัศมี ${searchRadiusKm} กม. รอบพิกัดที่ใช้ค้นหา`}
                   </p>
                   <div className="flex items-center justify-center gap-2 flex-wrap">
                     {searchRadiusKm < 40 && (

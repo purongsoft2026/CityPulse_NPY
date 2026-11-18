@@ -861,14 +861,15 @@ export default function Home() {
       />
 
       {/* Emergency SOS Hub Modal */}
-      <EmergencySosModal
-        isOpen={isSosModalOpen}
+      {isSosModalOpen && <EmergencySosModal
+        isOpen
+        preferGps={!sosSearchCoord && !pendingCoord}
         onClose={() => { setIsSosModalOpen(false); setSosSearchCoord(undefined); }}
         currentCoord={
           sosSearchCoord ?? pendingCoord ?? effectiveTargetCity?.center ?? DEFAULT_MAP_VIEW.center
         }
         onSelectEmergencyPoint={handleSelectEmergencyPoint}
-      />
+      />}
 
       {/* Mascot Toast Notification Feedback */}
       {toastNotification && (

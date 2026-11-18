@@ -240,7 +240,7 @@ export async function GET(request: NextRequest) {
   const cached = EMERGENCY_CACHE.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     return NextResponse.json(cached.payload, {
-      headers: { "Cache-Control": "public, max-age=600" },
+      headers: { "Cache-Control": "private, max-age=60" },
     });
   }
 
@@ -250,7 +250,7 @@ export async function GET(request: NextRequest) {
   const center: [number, number] = [lng, lat];
 
   try {
-    const [hospRes, policeRes, fireRes, aedRes] = await Promise.allSettled([
+    const [hospRes, policeRes, fireRes, rescueRes, overpassRes] = await Promise.allSettled([
       queryPhotonCategory(
         "โรงพยาบาล",
         lat,
@@ -281,11 +281,22 @@ export async function GET(request: NextRequest) {
         "fire_station",
         controller.signal,
       ),
+      queryPhotonCategory(
+        "กู้ภัย",
+        lat,
+        lng,
+        deltaDeg,
+        15,
+        new Set(["ambulance_station", "rescue_station"]),
+        "rescue",
+        controller.signal,
+      ),
       queryOverpassServices(lat, lng, Math.round(radiusKm * 1000)),
     ]);
 
     const livePoints: EmergencyPoint[] = [
-      ...(aedRes.status === "fulfilled" ? aedRes.value : []),
+      ...(overpassRes.status === "fulfilled" ? overpassRes.value : []),
+      ...(rescueRes.status === "fulfilled" ? rescueRes.value : []),
       ...(hospRes.status === "fulfilled" ? hospRes.value : []),
       ...(policeRes.status === "fulfilled" ? policeRes.value : []),
       ...(fireRes.status === "fulfilled" ? fireRes.value : []),
@@ -297,11 +308,6 @@ export async function GET(request: NextRequest) {
 
     const combined = deduplicatePoints([...nearbyCurated.filter((pt) => pt.id.startsWith("nara-")), ...livePoints, ...nearbyCurated.filter((pt) => !pt.id.startsWith("nara-"))], center, radiusKm);
     const hasLive = livePoints.length > 0;
-    const localIds = new Set(NARATHIWAT_EMERGENCY_POINTS.map((point) => point.id));
-    const localCount = combined.filter((point) => localIds.has(point.id)).length;
-    let liveSlots = 60 - localCount;
-    const finalPoints = combined.filter((point) => localIds.has(point.id) || liveSlots-- > 0);
-
     const areaTokens = (livePoints[0]?.locationName ?? "").split(" · ").filter(Boolean);
     const areaLabel = areaTokens.slice(-2).join(" · ") || "พื้นที่ใกล้พิกัดที่เลือก";
 
@@ -310,7 +316,7 @@ export async function GET(request: NextRequest) {
       source: (hasLive ? "osm-live" : "fallback") as "osm-live" | "fallback",
       center,
       areaLabel,
-      points: finalPoints,
+      points: combined,
     };
 
     if (EMERGENCY_CACHE.size >= 250) EMERGENCY_CACHE.delete(EMERGENCY_CACHE.keys().next().value!);
@@ -320,7 +326,7 @@ export async function GET(request: NextRequest) {
     });
 
     return NextResponse.json(payload, {
-      headers: { "Cache-Control": "public, max-age=600" },
+      headers: { "Cache-Control": "private, max-age=60" },
     });
   } catch {
     return NextResponse.json({
