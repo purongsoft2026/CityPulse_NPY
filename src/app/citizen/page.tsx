@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState, useSyncExternalStore } from "react";
+import React, { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { JKIcon } from "@/components/ui/jk-icon";
 import { CitizenAuthModal, type CitizenAuthTab } from "@/components/auth/CitizenAuthModal";
@@ -86,7 +86,7 @@ export default function CitizenHubPage() {
     serverVoyager
   );
 
-  const complaints = useSyncExternalStore(
+  const localComplaints = useSyncExternalStore(
     subscribeStorageSync,
     getComplaintsSnapshot,
     serverComplaints
@@ -101,6 +101,43 @@ export default function CitizenHubPage() {
     getMyReportsSnapshot,
     serverEmptyStrings
   );
+  const [centralStatuses, setCentralStatuses] = useState<Record<string, ComplaintReport["status"]>>({});
+  useEffect(() => {
+    const ids = [...new Set(myReportsArray)].filter((id) =>
+      /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(id),
+    );
+    if (!ids.length) return;
+    const controller = new AbortController();
+    let refreshing = false;
+    const refresh = async () => {
+      if (refreshing) return;
+      refreshing = true;
+      try {
+        const rows: Pick<ComplaintReport, "id" | "status">[] = [];
+        for (let offset = 0; offset < ids.length; offset += 50) {
+          const params = new URLSearchParams();
+          ids.slice(offset, offset + 50).forEach((id) => params.append("id", id));
+          const response = await fetch(`/api/reports?${params}`, { signal: controller.signal });
+          if (!response.ok) return;
+          rows.push(...await response.json());
+        }
+        if (!controller.signal.aborted) {
+          setCentralStatuses(Object.fromEntries(rows.map(({ id, status }) => [id, status])));
+        }
+      } catch {
+        // Keep the last available status on a transient connection failure.
+      } finally {
+        refreshing = false;
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(refresh, 30000);
+    return () => { controller.abort(); window.clearInterval(timer); };
+  }, [myReportsArray]);
+  const complaints = useMemo(() => localComplaints.map((report) => {
+    const status = centralStatuses[report.id];
+    return status ? { ...report, status } : report;
+  }), [localComplaints, centralStatuses]);
   const checkInsArray = useSyncExternalStore(
     subscribeStorageSync,
     getCheckInsSnapshot,

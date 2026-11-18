@@ -49,3 +49,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "ติดต่อฐานข้อมูลไม่ได้ กรุณาลองส่งอีกครั้ง" }, { status: 503 });
   }
 }
+
+export async function GET(request: NextRequest) {
+  const ids = request.nextUrl.searchParams.getAll("id");
+  if (ids.length === 0 || ids.length > 50 || ids.some((id) => !reportIdPattern.test(id))) {
+    return NextResponse.json({ error: "รหัสรายการไม่ถูกต้อง" }, { status: 400 });
+  }
+  const params = new URLSearchParams({ select: "id,status", id: `in.(${ids.join(",")})` });
+  try {
+    const response = await reportsRequest(`?${params}`);
+    return NextResponse.json(await response.json(), {
+      headers: { "Cache-Control": "no-store" },
+    });
+  } catch {
+    return NextResponse.json({ error: "โหลดสถานะล่าสุดไม่ได้" }, { status: 503 });
+  }
+}
