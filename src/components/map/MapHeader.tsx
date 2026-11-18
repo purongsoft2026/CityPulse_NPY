@@ -232,7 +232,7 @@ export function MapHeader({
             <JKIcon name="location-dot" />
           </div>
           <span className="font-black text-sm tracking-tight bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
-            CityPulse
+            CityPulseHERO
           </span>
           <span className="hidden 2xl:inline text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-500/12 dark:bg-cyan-400/20 text-teal-700 dark:text-cyan-300 whitespace-nowrap">
             แผนที่แจ้งเหตุอัจฉริยะ
