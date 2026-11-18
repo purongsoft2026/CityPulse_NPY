@@ -393,7 +393,7 @@ export function EmergencySosModal({
                       {isLoadingPoints
                         ? "กำลังค้นหาหน่วยกู้ชีพทั่วประเทศ..."
                         : liveSource === "osm-live"
-                          ? `ข้อมูลจริง OpenStreetMap (${liveAreaLabel || "77 จังหวัด"})`
+                          ? `OpenStreetMap และข้อมูลอ้างอิง (${liveAreaLabel || "77 จังหวัด"})`
                           : "ข้อมูลอ้างอิงส่วนกลาง"}
                     </span>
                   </span>
@@ -504,7 +504,7 @@ export function EmergencySosModal({
                             {meta.label}
                           </span>
                           <span className="text-[10px] font-mono font-black text-teal-700 dark:text-cyan-300">
-                            ห่าง {formatDistance(distanceKm)}
+                            {point.locationApproximate ? "อ้างอิงตามพื้นที่" : `ห่าง ${formatDistance(distanceKm)}`}
                           </span>
                           {point.is24h && (
                             <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
@@ -538,15 +538,17 @@ export function EmergencySosModal({
                         </a>
                       )}
                       <a
-                        href={`https://www.google.com/maps/dir/?api=1&destination=${point.coordinates[1]},${point.coordinates[0]}`}
+                        href={point.locationApproximate
+                          ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${point.name} ${point.locationName}`)}`
+                          : `https://www.google.com/maps/dir/?api=1&destination=${point.coordinates[1]},${point.coordinates[0]}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="px-2.5 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/15 text-slate-700 dark:text-white hover:bg-slate-100 dark:hover:bg-slate-700 text-[10px] font-bold transition flex items-center gap-1"
                       >
                         <JKIcon name="diamond-turn-right" className="text-[9px] text-cyan-500" />
-                        <span>นำทาง</span>
+                        <span>{point.locationApproximate ? "ค้นหาบนแผนที่" : "นำทาง"}</span>
                       </a>
-                      {onSelectEmergencyPoint && (
+                      {onSelectEmergencyPoint && !point.locationApproximate && (
                         <button
                           type="button"
                           onClick={() => {

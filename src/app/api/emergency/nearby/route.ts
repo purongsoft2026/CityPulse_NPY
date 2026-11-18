@@ -5,6 +5,8 @@ import {
   type EmergencyPoint,
 } from "@/data/map-data";
 
+import { NARATHIWAT_EMERGENCY_POINTS } from "@/data/narathiwat-emergency";
+
 interface EmergencyCacheEntry {
   expiresAt: number;
   payload: {
@@ -136,6 +138,9 @@ async function queryOverpassServices(
   const query = `[out:json][timeout:5];(
     nwr["amenity"~"^(hospital|police|fire_station)$"]${area};
     nwr["emergency"~"^(ambulance_station|rescue_station|defibrillator)$"]${area};
+    nwr["healthcare"="hospital"]${area};
+    nwr["amenity"~"^(ambulance_station|rescue_station)$"]${area};
+    nwr["office"="ngo"]["name"~"กู้ภัย|กู้ชีพ"]${area};
   );out center 160;`;
   const mirrors = [
     "https://overpass-api.de/api/interpreter",
@@ -168,7 +173,9 @@ async function queryOverpassServices(
             hospital: "hospital", police: "police", fire_station: "fire_station",
             ambulance_station: "rescue", rescue_station: "rescue", defibrillator: "aed",
           };
-          const type = types[tags.emergency] ?? types[tags.amenity];
+          const type = types[tags.emergency] ?? types[tags.amenity] ??
+            (tags.healthcare === "hospital" ? "hospital" :
+              tags.office === "ngo" && /กู้ภัย|กู้ชีพ/.test(tags.name ?? "") ? "rescue" : undefined);
           if (!type) return null;
           const name = tags["name:th"] || tags.name || tags["defibrillator:location"] ||
             (type === "aed" ? "จุดติดตั้งเครื่องกระตุกหัวใจ AED" : "");
@@ -207,7 +214,7 @@ function deduplicatePoints(
       if (existing.type !== pt.type) return false;
       const distKm = haversineDistanceKm(existing.coordinates, pt.coordinates);
       const exName = existing.name.replace(/\s+/g, "").toLowerCase();
-      return distKm < 0.08 || (distKm < 0.45 && (exName.includes(normName) || normName.includes(exName)));
+      return (!existing.locationApproximate && !pt.locationApproximate && distKm < 0.08) || (distKm < 0.45 && (exName.includes(normName) || normName.includes(exName)));
     });
     if (!isDup) kept.push(pt);
   }
@@ -284,13 +291,16 @@ export async function GET(request: NextRequest) {
       ...(fireRes.status === "fulfilled" ? fireRes.value : []),
     ];
 
-    const nearbyCurated = EMERGENCY_POINTS.filter(
+    const nearbyCurated = [...NARATHIWAT_EMERGENCY_POINTS, ...EMERGENCY_POINTS].filter(
       (pt) => haversineDistanceKm(center, pt.coordinates) <= 35,
     );
 
-    const combined = deduplicatePoints([...livePoints, ...nearbyCurated], center, radiusKm);
+    const combined = deduplicatePoints([...nearbyCurated.filter((pt) => pt.id.startsWith("nara-")), ...livePoints, ...nearbyCurated.filter((pt) => !pt.id.startsWith("nara-"))], center, radiusKm);
     const hasLive = livePoints.length > 0;
-    const finalPoints = combined.slice(0, 60);
+    const localIds = new Set(NARATHIWAT_EMERGENCY_POINTS.map((point) => point.id));
+    const localCount = combined.filter((point) => localIds.has(point.id)).length;
+    let liveSlots = 60 - localCount;
+    const finalPoints = combined.filter((point) => localIds.has(point.id) || liveSlots-- > 0);
 
     const areaTokens = (livePoints[0]?.locationName ?? "").split(" · ").filter(Boolean);
     const areaLabel = areaTokens.slice(-2).join(" · ") || "พื้นที่ใกล้พิกัดที่เลือก";
@@ -318,7 +328,7 @@ export async function GET(request: NextRequest) {
       source: "fallback" as const,
       center,
       areaLabel: "พื้นที่ใกล้พิกัดที่เลือก",
-      points: EMERGENCY_POINTS.filter((point) => haversineDistanceKm(center, point.coordinates) <= radiusKm),
+      points: [...NARATHIWAT_EMERGENCY_POINTS, ...EMERGENCY_POINTS].filter((point) => haversineDistanceKm(center, point.coordinates) <= radiusKm),
     });
   } finally {
     clearTimeout(timeout);

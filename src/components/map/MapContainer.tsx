@@ -424,7 +424,7 @@ export function MapContainer({
 
     fetchNearbyEmergencyPoints(targetLat, targetLng, 20, controller.signal).then((res) => {
       if (!controller.signal.aborted) {
-        setNearbyEmergencyPoints(res?.points ?? []);
+        setNearbyEmergencyPoints(res?.points.filter((point) => !point.locationApproximate) ?? []);
       }
     });
 

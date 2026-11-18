@@ -1201,6 +1201,7 @@ export interface EmergencyPoint {
   type: "aed" | "hospital" | "fire_station" | "police" | "rescue";
   locationName: string;
   coordinates: [number, number];
+  locationApproximate?: boolean;
   phone?: string;
   instruction?: string;
   is24h: boolean;
