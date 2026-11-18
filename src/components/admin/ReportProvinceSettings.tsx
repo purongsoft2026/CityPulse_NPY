@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { THAILAND_PROVINCES } from "@/data/map-data";
+import { PROVINCE_GROUPS, THAILAND_PROVINCES } from "@/data/map-data";
+
+const provinceGroups = PROVINCE_GROUPS.map(({ region, provinces }) => ({
+  region,
+  provinces: [...provinces].sort((a, b) => a.localeCompare(b, "th")),
+}));
 
 export function ReportProvinceSettings() {
   const [open, setOpen] = useState(false);
@@ -22,6 +27,16 @@ export function ReportProvinceSettings() {
       });
     return () => controller.abort();
   }, [open]);
+
+  function updateSelection(provinces: string[], checked: boolean) {
+    setSelected((previous) => {
+      if (!previous) return previous;
+      return checked
+        ? Array.from(new Set([...previous, ...provinces]))
+        : previous.filter((province) => !provinces.includes(province));
+    });
+    setMessage("");
+  }
 
   async function save() {
     if (!selected || saving) return;
@@ -44,22 +59,44 @@ export function ReportProvinceSettings() {
       {selected ? (
         <fieldset disabled={saving} className="space-y-3">
           <div className="flex flex-wrap gap-3 text-sm">
-            <button type="button" onClick={() => setSelected([...THAILAND_PROVINCES])}>เลือกทั้งหมด</button>
-            <button type="button" onClick={() => setSelected([])}>ล้างการเลือก</button>
+            <button type="button" onClick={() => updateSelection(THAILAND_PROVINCES, true)}>เลือกทั้งหมด</button>
+            <button type="button" onClick={() => updateSelection(THAILAND_PROVINCES, false)}>ล้างการเลือก</button>
             <span>เลือก {selected.length} จังหวัด</span>
           </div>
-          <div className="grid max-h-64 grid-cols-2 gap-2 overflow-auto sm:grid-cols-4">
-            {[...THAILAND_PROVINCES].sort((a, b) => a.localeCompare(b, "th")).map((province) => (
-              <label key={province} className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={selected.includes(province)} onChange={(event) => {
-                  const checked = event.currentTarget.checked;
-                  setSelected((previous) => !previous ? previous : checked
-                    ? [...previous, province] : previous.filter((item) => item !== province));
-                  setMessage("");
-                }} />
-                {province}
-              </label>
-            ))}
+          <div className="max-h-96 space-y-3 overflow-auto pr-2">
+            {provinceGroups.map(({ region, provinces }) => {
+              const selectedCount = provinces.filter((province) => selected.includes(province)).length;
+              return (
+                <fieldset key={region} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                  <legend className="px-1 text-sm font-semibold">
+                    {region} <span className="font-normal">({selectedCount}/{provinces.length})</span>
+                  </legend>
+                  <label className="mb-2 flex items-center gap-2 text-sm font-medium">
+                    <input
+                      type="checkbox"
+                      checked={selectedCount === provinces.length}
+                      ref={(input) => {
+                        if (input) input.indeterminate = selectedCount > 0 && selectedCount < provinces.length;
+                      }}
+                      onChange={(event) => updateSelection(provinces, event.currentTarget.checked)}
+                    />
+                    เลือกทั้ง{region}
+                  </label>
+                  <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 lg:grid-cols-4">
+                    {provinces.map((province) => (
+                      <label key={province} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={selected.includes(province)}
+                          onChange={(event) => updateSelection([province], event.currentTarget.checked)}
+                        />
+                        {province}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              );
+            })}
           </div>
           <button type="button" onClick={save}
             className="rounded-lg bg-sky-700 px-4 py-2 font-semibold text-white disabled:opacity-60">
