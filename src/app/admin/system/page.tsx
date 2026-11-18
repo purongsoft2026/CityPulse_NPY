@@ -40,7 +40,7 @@ import {
   getComplaintsSnapshot,
   getIsDarkSnapshot,
   getMapStyleSnapshot,
-  resetComplaintsStore,
+  clearSampleComplaints,
   subscribeStorageSync,
   subscribeThemeSync,
   toggleThemeStore,
@@ -572,11 +572,16 @@ export default function AdminSystemPage() {
 
   const handleDeleteCollectionKey = (key: string, label: string) => {
     setConfirmAction({
-      title: `ล้างข้อมูล "${label}"?`,
-      message: `คีย์ "${key}" จะถูกลบออกจาก localStorage ของเบราว์เซอร์นี้`,
+      title: key === STORAGE_KEY ? "ล้างเรื่องร้องเรียนตัวอย่าง?" : `ล้างข้อมูล "${label}"?`,
+      message: key === STORAGE_KEY
+        ? "ล้างรายการตัวอย่างที่มากับระบบในเบราว์เซอร์นี้ เรื่องร้องเรียนในฐานข้อมูลกลางยังอยู่"
+        : `คีย์ "${key}" จะถูกลบออกจาก localStorage ของเบราว์เซอร์นี้`,
       onConfirm: () => {
         if (key === STORAGE_KEY) {
-          resetComplaintsStore();
+          if (!clearSampleComplaints()) {
+            showToast("ล้างข้อมูลตัวอย่างไม่ได้", "กรุณาตรวจการตั้งค่าพื้นที่จัดเก็บของเบราว์เซอร์", "warn");
+            return;
+          }
         } else if (key === SYSTEM_SETTINGS_STORAGE_KEY) {
           resetSystemSettings();
           setDraftSettings(null);
@@ -587,7 +592,7 @@ export default function AdminSystemPage() {
         }
         setRefreshTick((t) => t + 1);
         setConfirmAction(null);
-        showToast(`ล้างคีย์ ${key} เรียบร้อยแล้ว`);
+        showToast(key === STORAGE_KEY ? "ล้างเรื่องร้องเรียนตัวอย่างแล้ว" : `ล้างคีย์ ${key} เรียบร้อยแล้ว`);
       },
     });
   };
@@ -1822,7 +1827,7 @@ export default function AdminSystemPage() {
                           }
                           className="px-3 py-1.5 rounded-xl bg-rose-500/12 hover:bg-rose-500/20 text-rose-700 dark:text-rose-300 text-[11px] font-black cursor-pointer transition"
                         >
-                          รีเซ็ตเรื่องร้องเรียนเป็นค่าเริ่มต้น
+                          ล้างเรื่องร้องเรียนตัวอย่าง
                         </button>
                         <button
                           type="button"

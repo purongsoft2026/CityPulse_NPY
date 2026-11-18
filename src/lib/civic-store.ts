@@ -48,7 +48,7 @@ export function getComplaintsSnapshot(): ComplaintReport[] {
     cachedComplaintsRaw = raw;
     if (raw) {
       const stored: unknown = JSON.parse(raw);
-      if (Array.isArray(stored) && stored.length > 0) {
+      if (Array.isArray(stored)) {
         const initMap = new Map(INITIAL_COMPLAINTS.map((c) => [c.id, c]));
         cachedComplaintsParsed = stored.map((entry) => {
           const item = entry as Partial<ComplaintReport> & { id: string };
@@ -91,9 +91,9 @@ export function getComplaintsSnapshot(): ComplaintReport[] {
 export function writeComplaintsStore(nextComplaints: ComplaintReport[]): boolean {
   try {
     const serialized = JSON.stringify(nextComplaints);
+    window.localStorage.setItem(STORAGE_KEY, serialized);
     cachedComplaintsRaw = serialized;
     cachedComplaintsParsed = nextComplaints;
-    window.localStorage.setItem(STORAGE_KEY, serialized);
     window.dispatchEvent(new Event(STORAGE_SYNC_EVENT));
     return true;
   } catch {
@@ -101,15 +101,9 @@ export function writeComplaintsStore(nextComplaints: ComplaintReport[]): boolean
   }
 }
 
-export function resetComplaintsStore() {
-  try {
-    window.localStorage.removeItem(STORAGE_KEY);
-    cachedComplaintsRaw = null;
-    cachedComplaintsParsed = INITIAL_COMPLAINTS;
-    window.dispatchEvent(new Event(STORAGE_SYNC_EVENT));
-  } catch {
-    // ignore
-  }
+export function clearSampleComplaints(): boolean {
+  const sampleIds = new Set(INITIAL_COMPLAINTS.map((report) => report.id));
+  return writeComplaintsStore(getComplaintsSnapshot().filter((report) => !sampleIds.has(report.id)));
 }
 
 export function getUpvotesSnapshot(): string[] {

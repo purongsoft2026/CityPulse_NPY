@@ -30,7 +30,7 @@ import {
   getIsDarkSnapshot,
   getMapStyleSnapshot,
   writeComplaintsStore,
-  resetComplaintsStore,
+  clearSampleComplaints,
   subscribeStorageSync,
   subscribeThemeSync,
   subscribePopState,
@@ -437,13 +437,13 @@ export default function AdminPage() {
   };
 
   const handleConfirmReset = () => {
-    resetComplaintsStore();
+    if (!clearSampleComplaints()) {
+      showToast("ล้างข้อมูลตัวอย่างไม่ได้", "กรุณาตรวจการตั้งค่าพื้นที่จัดเก็บของเบราว์เซอร์");
+      return;
+    }
     setIsResetModalOpen(false);
     setSelectedCaseId(null);
-    showToast(
-      "รีเซ็ตข้อมูลตัวอย่างแล้ว",
-      `โหลดข้อมูลเริ่มต้น ${INITIAL_COMPLAINTS.length} รายการสำเร็จ`,
-    );
+    showToast("ล้างข้อมูลตัวอย่างแล้ว", "เรื่องร้องเรียนในฐานข้อมูลกลางยังอยู่");
   };
 
   const handleQuickStatusChange = async (
@@ -603,10 +603,10 @@ export default function AdminPage() {
               type="button"
               onClick={() => setIsResetModalOpen(true)}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-rose-500/15 hover:bg-rose-500/25 text-xs font-black text-rose-700 dark:text-rose-300 border border-rose-500/30 transition cursor-pointer active:scale-95"
-              title="ล้างข้อมูลที่แก้ไขกลับสู่ข้อมูลตัวอย่างเริ่มต้น"
+              title="ล้างรายการตัวอย่างในเบราว์เซอร์"
             >
               <JKIcon name="rotate-left" className="text-xs" />
-              <span className="hidden sm:inline">รีเซ็ต</span>
+              <span className="hidden sm:inline">ล้างข้อมูลตัวอย่าง</span>
             </button>
           )}
 
@@ -1872,9 +1872,9 @@ export default function AdminPage() {
               <JKIcon name="triangle-exclamation" />
             </div>
             <div className="space-y-1">
-              <h3 className="text-base font-black">ยืนยันการรีเซ็ตข้อมูลตัวอย่าง</h3>
+              <h3 className="text-base font-black">ยืนยันล้างข้อมูลตัวอย่าง</h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                การแก้ไข สถานะ และเรื่องร้องเรียนที่เพิ่มใหม่จะถูกล้างกลับเป็นค่าเริ่มต้น
+                ล้างรายการตัวอย่างที่มากับระบบในเบราว์เซอร์นี้ เรื่องร้องเรียนในฐานข้อมูลกลางยังอยู่
               </p>
             </div>
             <div className="grid grid-cols-2 gap-2.5 pt-1">
@@ -1890,7 +1890,7 @@ export default function AdminPage() {
                 onClick={handleConfirmReset}
                 className="py-2.5 rounded-full bg-rose-500 hover:bg-rose-600 text-xs font-black text-white shadow-lg shadow-rose-500/30 cursor-pointer transition"
               >
-                ยืนยันรีเซ็ต
+                ยืนยันล้างข้อมูลตัวอย่าง
               </button>
             </div>
           </div>
