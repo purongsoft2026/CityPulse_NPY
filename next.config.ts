@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  outputFileTracingIncludes: { "/api/reports": ["./public/data/thailand-provinces.geojson"] },
   async headers() {
     return [
       {

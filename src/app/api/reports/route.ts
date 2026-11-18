@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { COMPLAINT_CATEGORIES } from "@/data/map-data";
+import { getAllowedProvinces, provinceAt } from "@/lib/report-provinces";
 import { reportIdPattern, reportsRequest } from "@/lib/maps-reports-db";
 
 export async function POST(request: NextRequest) {
@@ -30,12 +31,19 @@ export async function POST(request: NextRequest) {
   }
   const anonymous = data.isAnonymous === true;
   try {
+    const allowed = await getAllowedProvinces();
+    const province = await provinceAt(longitude, latitude);
+    if (!province || (allowed && !allowed.includes(province))) {
+      return NextResponse.json({
+        error: province ? `จ.${province} ยังไม่เปิดรับแจ้งเหตุ` : "พิกัดนี้อยู่นอกขอบเขตจังหวัดที่รับแจ้ง",
+      }, { status: 403 });
+    }
     await reportsRequest("?on_conflict=id", {
       method: "POST",
       headers: { Prefer: "resolution=ignore-duplicates,return=minimal" },
       body: JSON.stringify({
         id: data.id, title, description, category_id: data.categoryId, longitude, latitude,
-        province: text(data.province, 120), district: text(data.district, 120),
+        province, district: text(data.district, 120),
         reporter_name: anonymous ? null : text(data.reporterName, 120),
         reporter_phone: anonymous ? null : text(data.phone, 32),
         is_anonymous: anonymous,

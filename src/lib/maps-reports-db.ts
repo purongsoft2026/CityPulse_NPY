@@ -2,7 +2,11 @@ import type { ComplaintReport } from "@/data/map-data";
 
 export const reportIdPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 
-export async function reportsRequest(query: string, init?: RequestInit) {
+export function reportsRequest(query: string, init?: RequestInit) {
+  return mapsDbRequest("maps_reports", query, init);
+}
+
+export async function mapsDbRequest(table: "maps_reports" | "maps_report_settings", query: string, init?: RequestInit) {
   const url = process.env.MAPS_SUPABASE_URL;
   const key = process.env.MAPS_SUPABASE_SECRET_KEY;
   if (!url || !key) throw new Error("Database is not configured");
@@ -10,7 +14,7 @@ export async function reportsRequest(query: string, init?: RequestInit) {
   headers.set("apikey", key);
   if (key.startsWith("eyJ")) headers.set("Authorization", `Bearer ${key}`);
   headers.set("Content-Type", "application/json");
-  const result = await fetch(new URL(`/rest/v1/maps_reports${query}`, url), {
+  const result = await fetch(new URL(`/rest/v1/${table}${query}`, url), {
     ...init, headers, cache: "no-store", signal: AbortSignal.timeout(10000),
   });
   if (!result.ok) throw new Error(`Database HTTP ${result.status}`);
