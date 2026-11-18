@@ -13,6 +13,7 @@ interface ComplaintSidebarProps {
   isOpen: boolean;
   onClose: () => void;
   province: string;
+  reportLoadError?: boolean;
   complaints: ComplaintReport[];
   selectedComplaint: ComplaintReport | null;
   onSelectComplaint: (c: ComplaintReport) => void;
@@ -49,6 +50,7 @@ export function ComplaintSidebar({
   isOpen,
   onClose,
   province,
+  reportLoadError,
   complaints,
   selectedComplaint,
   onSelectComplaint,
@@ -220,6 +222,9 @@ export function ComplaintSidebar({
                 <p className="text-[11px] text-slate-600 dark:text-slate-300 font-semibold mt-0.5">
                   {province} · {stats.total} รายการ
                 </p>
+                {reportLoadError && <p role="status" className="text-xs text-amber-700 dark:text-amber-300">
+                  โหลดเรื่องจากระบบกลางไม่ได้ ระบบจะลองใหม่อัตโนมัติ
+                </p>}
               </div>
               <button
                 onClick={onClose}

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useCallback, useRef, useSyncExternalStore } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { NearbyPlacesDialog } from "@/components/map/NearbyPlacesDialog";
 import { MapHeader, type MapStyleKey } from "@/components/map/MapHeader";
@@ -362,14 +362,69 @@ export default function Home() {
 
   // Derive active detail / selected complaint from ID & URL deep-link
   const activeUrlComplaintId = dismissedUrlComplaint ? null : urlComplaintId;
-  const linkedProvince = activeUrlComplaintId
-    ? complaints.find((report) => report.id === activeUrlComplaintId)?.province
+  const [linkedPublicReport, setLinkedPublicReport] = useState<ComplaintReport>();
+  useEffect(() => {
+    if (!activeUrlComplaintId || !/^[a-f0-9-]{36}$/i.test(activeUrlComplaintId)) return;
+    const controller = new AbortController();
+    const query = new URLSearchParams({ id: activeUrlComplaintId });
+    void fetch(`/api/reports/public?${query}`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const [report]: ComplaintReport[] = await response.json();
+        if (!controller.signal.aborted) setLinkedPublicReport(report);
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [activeUrlComplaintId]);
+
+  const linkedReport = activeUrlComplaintId
+    ? (linkedPublicReport?.id === activeUrlComplaintId
+        ? linkedPublicReport
+        : complaints.find((report) => report.id === activeUrlComplaintId))
     : undefined;
-  const displayedProvince = linkedProvince ?? complaintProvince;
-  const visibleComplaints = useMemo(
-    () => complaints.filter((report) => report.province === displayedProvince),
-    [complaints, displayedProvince],
-  );
+  const displayedProvince = linkedReport?.province ?? complaintProvince;
+  const [publicReports, setPublicReports] = useState<{ province: string; reports: ComplaintReport[] }>();
+  const [failedReportProvince, setFailedReportProvince] = useState<string>();
+  useEffect(() => {
+    const controller = new AbortController();
+    let loading = false;
+    async function refreshReports() {
+      if (loading) return;
+      loading = true;
+      try {
+        const reports: ComplaintReport[] = [];
+        for (let offset = 0; ; offset += 50) {
+          const params = new URLSearchParams({ province: displayedProvince, offset: String(offset) });
+          const response = await fetch(`/api/reports/public?${params}`, { signal: controller.signal });
+          if (!response.ok) throw new Error("Reports unavailable");
+          const page: ComplaintReport[] = await response.json();
+          reports.push(...page);
+          if (page.length < 50) break;
+        }
+        if (!controller.signal.aborted) {
+          setPublicReports({ province: displayedProvince, reports });
+          setFailedReportProvince(undefined);
+        }
+      } catch {
+        if (!controller.signal.aborted) setFailedReportProvince(displayedProvince);
+      } finally {
+        loading = false;
+      }
+    }
+    void refreshReports();
+    const timer = window.setInterval(refreshReports, 30000);
+    return () => { controller.abort(); window.clearInterval(timer); };
+  }, [displayedProvince]);
+
+  const visibleComplaints = useMemo(() => {
+    const reports = new Map(complaints.filter((report) => report.province === displayedProvince)
+      .map((report) => [report.id, report]));
+    if (linkedReport?.province === displayedProvince) reports.set(linkedReport.id, linkedReport);
+    if (publicReports?.province === displayedProvince) {
+      for (const report of publicReports.reports) reports.set(report.id, report);
+    }
+    return [...reports.values()];
+  }, [complaints, displayedProvince, linkedReport, publicReports]);
   const effectiveDetailId = detailComplaintId ?? activeUrlComplaintId;
   const detailComplaint = useMemo(
     () => (effectiveDetailId ? visibleComplaints.find((c) => c.id === effectiveDetailId) ?? null : null),
@@ -763,6 +818,7 @@ export default function Home() {
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
         province={displayedProvince}
+        reportLoadError={failedReportProvince === displayedProvince}
         complaints={visibleComplaints}
         selectedComplaint={selectedComplaint}
         onSelectComplaint={handleSelectComplaint}
