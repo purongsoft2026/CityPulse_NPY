@@ -1,0 +1,764 @@
+rules_version = '2';
+
+// ============================================================================
+// CityPulse Civic Complaint & Mapping Platform — Cloud Firestore Security Rules
+// ============================================================================
+//
+// Assumed Data Model:
+//
+// 1. Collection: complaints/{complaintId}
+//    Fields:
+//      - id: string (required, immutable, must equal complaintId, 1..128)
+//      - title: string (required, immutable after create, 1..200)
+//      - description: string (required, immutable after create, 1..3000)
+//      - categoryId: string (required, immutable after create, 1..50)
+//      - status: string (required, 'pending' | 'inprogress' | 'resolved'; must be 'pending' on create)
+//      - priority: string (required, 'low' | 'medium' | 'high' | 'urgent')
+//      - coordinates: map { lng: number [-180..180], lat: number [-90..90] } OR list [lng, lat] (required, immutable after create)
+//      - reporterName: string (required, immutable after create, 1..100)
+//      - phone: string (optional, immutable after create, 0..30)
+//        [PII NOTE]: complaints/{complaintId} is publicly readable for map visitors.
+//        Before production launch, consider moving `phone` to a restricted subcollection
+//        if reporter phone numbers must not be exposed publicly.
+//      - isAnonymous: bool (required, immutable after create)
+//      - reporterMemberId: string (optional, immutable after create, 1..128; required == request.auth.uid when signed in; forbidden when unauthenticated)
+//      - imageUrl: string (optional, immutable after create, https:// URL, 1..2048)
+//      - imageDriveFileId: string (optional, immutable after create, [a-zA-Z0-9._-]{1..256})
+//      - imageName: string (optional, immutable after create, 1..255)
+//      - resolvedImageUrl: string (optional, officer-editable, https:// URL, 1..2048; forbidden on citizen create)
+//      - resolvedImageDriveFileId: string (optional, officer-editable, [a-zA-Z0-9._-]{1..256}; forbidden on citizen create)
+//      - province: string (required, immutable after create, 1..100)
+//      - district: string (required, immutable after create, 1..100)
+//      - departmentId: string (required, officer-editable, 1..64)
+//      - assignedOfficer: string (optional, officer-editable, 1..120; forbidden on citizen create)
+//      - upvotes: int (required, >= 0; must be 0 on create; +/-1 only via paired batch with upvotes/{uid})
+//      - createdAt: timestamp or string (required, immutable, <= 64 chars if string)
+//      - updatedAt: timestamp (required, <= request.time + 5m)
+//
+// 2. Subcollection: complaints/{complaintId}/timeline/{eventId}
+//    Fields:
+//      - id: string (required, immutable, must equal eventId, 1..128)
+//      - date: string (required, 1..64)
+//      - time: string (required, 1..32)
+//      - title: string (required, 1..200)
+//      - description: string (required, 1..1000)
+//      - status: string (required, 'pending' | 'inprogress' | 'resolved')
+//      - officer: string (optional, 1..120)
+//      - icon: string (required, 1..64)
+//      - createdAt: timestamp (optional, immutable if set, <= request.time + 5m)
+//
+// 3. Subcollection: complaints/{complaintId}/comments/{commentId}
+//    Fields:
+//      - id: string (required, immutable, must equal commentId, 1..128)
+//      - authorId: string (required, immutable, must equal request.auth.uid, 1..128)
+//      - author: string (required, 1..100)
+//      - text: string (required, 1..2000)
+//      - role: string (required, 'citizen' | 'officer'; 'officer' requires isOfficer())
+//      - createdAt: timestamp or string (required, <= 64 chars if string)
+//
+// 4. Subcollection: complaints/{complaintId}/upvotes/{userId}
+//    Fields:
+//      - userId: string (required, must equal userId and request.auth.uid, 1..128)
+//      - createdAt: timestamp (required, <= request.time + 5m)
+//    Note: Coupled via exists()/existsAfter() and get()/getAfter() with parent
+//    complaints/{complaintId}.upvotes so clients cannot inflate or desync counts.
+//
+// 5. Collection: civic_polls/{pollId}
+//    Fields:
+//      - id: string (required, immutable, must equal pollId, 1..128)
+//      - title: string (required, 1..300)
+//      - description: string (required, 1..3000)
+//      - locationName: string (required, 1..200)
+//      - coordinates: map { lng, lat } OR list [lng, lat] (required)
+//      - category: string (required, 'safety' | 'traffic' | 'environment' | 'pedestrian')
+//      - agreeCount: int (required, >= 0)
+//      - disagreeCount: int (required, >= 0)
+//      - totalVotes: int (required, >= 0, == agreeCount + disagreeCount)
+//      - proposalBy: string (required, 1..150)
+//      - endDate: string or timestamp (required, <= 64 chars if string)
+//      - isLocked: bool (optional)
+//      - createdAt: timestamp (optional, immutable if set)
+//      - updatedAt: timestamp (optional)
+//    Note: Only officers can create/update/delete polls. Aggregate vote counts
+//    should be maintained by Cloud Functions (Admin SDK) on votes/{userId} writes.
+//
+// 6. Subcollection: civic_polls/{pollId}/votes/{userId}
+//    Fields:
+//      - userId: string (required, immutable, must equal userId and request.auth.uid, 1..128)
+//      - vote: string (required, 'agree' | 'disagree')
+//      - createdAt: timestamp (required, immutable, <= request.time + 5m)
+//      - updatedAt: timestamp (optional, <= request.time + 5m)
+//
+// 7. Collection: citizens/{userId}
+//    Fields (NEVER store passwords in Firestore; Firebase Auth owns credentials):
+//      - id: string (optional, immutable if set, must equal userId)
+//      - displayName: string (required, 1..100)
+//      - email: string (required, valid email, <= 254)
+//      - phone: string (optional, 0..30)
+//      - homeProvince: string (required, 1..100)
+//      - avatarPose: string (required, 1..50)
+//      - joinedAt: timestamp or string (required, immutable, <= 64 chars if string)
+//      - role: string (optional, must equal 'citizen' if present)
+//      - updatedAt: timestamp (optional, <= request.time + 5m)
+//
+// 8. Subcollection: citizens/{userId}/checkins/{dateKey}
+//    Document ID: YYYY-MM-DD (validated calendar format)
+//    Fields:
+//      - dateKey: string (optional, must equal dateKey)
+//      - userId: string (optional, must equal userId)
+//      - checkedInAt: timestamp (required, <= request.time + 5m)
+//      - xpAwarded: int (optional, 0..100)
+//
+// 9. Collection: officers/{officerId}
+//    Fields (NEVER store passwords in Firestore):
+//      - id: string (required, immutable, must equal officerId, 1..128)
+//      - email: string (required, valid email, <= 254)
+//      - name: string (required, 1..120)
+//      - role: string (required, 1..150)
+//      - departmentId: string (required, 1..64)
+//      - badgeCode: string (required, 1..64)
+//      - avatarPose: string (required, 1..200)
+//      - isActive: bool (optional)
+//      - createdAt: timestamp (optional, immutable if set)
+//      - updatedAt: timestamp (optional)
+//
+// 10. Collection: system_settings/{settingId}
+//     Fields:
+//       - platformName: string (required, 1..100)
+//       - defaultMapStyle: string (required, 1..50)
+//       - maintenanceMode: bool (required)
+//       - maintenanceMessage: string (required, 0..500)
+//       - allowAnonymousReports: bool (required)
+//       - autoAssignDepartment: bool (required)
+//       - enableAir4ThaiLayer: bool (required)
+//       - slaDefaultHours: int (required, 1..720)
+//       - maxUploadSizeMb: number (required, 1..50)
+//       - xpRewards: map { DAILY_CHECKIN, UPVOTE, COMMENT, POLL_VOTE, REPORT, PHOTO_BONUS, RESOLVED_BONUS } (int 0..1000 each)
+//       - updatedAt: timestamp (optional)
+//       - updatedBy: string (optional, 1..128)
+//
+// 11. Collection: user_preferences/{userId}
+//     Fields:
+//       - theme: string (optional, 'light' | 'dark')
+//       - mapStyle: string (optional, 1..50)
+//       - updatedAt: timestamp (optional, <= request.time + 5m)
+//
+// ============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ========================================================================
+    // Helper Functions
+    // ========================================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isSuperAdmin() {
+      return isAuthenticated() &&
+        request.auth.token.get('role', '') == 'super_admin';
+    }
+
+    function isAdminOfficer() {
+      return isSuperAdmin() ||
+        (isAuthenticated() && (
+          request.auth.token.get('admin', false) == true ||
+          request.auth.token.get('role', '') == 'admin'
+        ));
+    }
+
+    function isOfficer() {
+      return isAuthenticated() && (
+        request.auth.token.get('officer', false) == true ||
+        request.auth.token.get('role', '') in ['officer', 'admin', 'super_admin'] ||
+        exists(/databases/$(database)/documents/officers/$(request.auth.uid))
+      );
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    function isValidString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isValidOptionalString(data, field, minLen, maxLen) {
+      return !(field in data) || isValidString(data[field], minLen, maxLen);
+    }
+
+    function isValidUrl(url) {
+      return url is string &&
+        url.size() >= 10 &&
+        url.size() <= 2048 &&
+        url.matches("^https://.*");
+    }
+
+    function isValidOptionalUrl(data, field) {
+      return !(field in data) || isValidUrl(data[field]);
+    }
+
+    function isValidDriveFileId(fileId) {
+      return fileId is string &&
+        fileId.size() >= 1 &&
+        fileId.size() <= 256 &&
+        fileId.matches("^[a-zA-Z0-9._-]+$");
+    }
+
+    function isValidOptionalDriveFileId(data, field) {
+      return !(field in data) || isValidDriveFileId(data[field]);
+    }
+
+    function isValidEmail(email) {
+      return email is string &&
+        email.size() >= 5 &&
+        email.size() <= 254 &&
+        email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidTimestamp(ts) {
+      return ts is timestamp && ts <= request.time + duration.value(5, 'm');
+    }
+
+    function isValidTimestampOrString(val) {
+      return isValidTimestamp(val) || isValidString(val, 1, 64);
+    }
+
+    function isValidCoordinates(coords) {
+      return (
+        coords is map &&
+        coords.keys().hasOnly(['lng', 'lat']) &&
+        coords.keys().hasAll(['lng', 'lat']) &&
+        coords.lng is number && coords.lng >= -180 && coords.lng <= 180 &&
+        coords.lat is number && coords.lat >= -90 && coords.lat <= 90
+      ) || (
+        coords is list &&
+        coords.size() == 2 &&
+        coords[0] is number && coords[0] >= -180 && coords[0] <= 180 &&
+        coords[1] is number && coords[1] >= -90 && coords[1] <= 90
+      );
+    }
+
+    function isValidComplaintStatus(status) {
+      return status in ['pending', 'inprogress', 'resolved'];
+    }
+
+    function isValidComplaintPriority(priority) {
+      return priority in ['low', 'medium', 'high', 'urgent'];
+    }
+
+    function isValidDateKey(dateKey) {
+      return dateKey is string &&
+        dateKey.matches("^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])$");
+    }
+
+    function allowsAnonymousReports() {
+      return exists(/databases/$(database)/documents/system_settings/global) &&
+        get(/databases/$(database)/documents/system_settings/global).data.get('allowAnonymousReports', false) == true;
+    }
+
+    function parentComplaintExists(complaintId) {
+      return exists(/databases/$(database)/documents/complaints/$(complaintId));
+    }
+
+    function parentPollExists(pollId) {
+      return exists(/databases/$(database)/documents/civic_polls/$(pollId));
+    }
+
+    // ========================================================================
+    // Domain Validators
+    // ========================================================================
+
+    function isValidComplaint(complaintId, data) {
+      let requiredFields = [
+        'id', 'title', 'description', 'categoryId', 'status', 'priority',
+        'coordinates', 'reporterName', 'isAnonymous', 'province', 'district',
+        'departmentId', 'upvotes', 'createdAt', 'updatedAt'
+      ];
+      let allowedFields = [
+        'id', 'title', 'description', 'categoryId', 'status', 'priority',
+        'coordinates', 'reporterName', 'phone', 'isAnonymous', 'reporterMemberId',
+        'imageUrl', 'imageDriveFileId', 'imageName',
+        'resolvedImageUrl', 'resolvedImageDriveFileId',
+        'province', 'district', 'departmentId', 'assignedOfficer',
+        'upvotes', 'createdAt', 'updatedAt'
+      ];
+
+      return hasRequiredFields(requiredFields) &&
+        hasOnlyAllowedFields(allowedFields) &&
+        isValidString(data.id, 1, 128) && data.id == complaintId &&
+        isValidString(data.title, 1, 200) &&
+        isValidString(data.description, 1, 3000) &&
+        isValidString(data.categoryId, 1, 50) &&
+        isValidComplaintStatus(data.status) &&
+        isValidComplaintPriority(data.priority) &&
+        isValidCoordinates(data.coordinates) &&
+        isValidString(data.reporterName, 1, 100) &&
+        isValidOptionalString(data, 'phone', 0, 30) &&
+        data.isAnonymous is bool &&
+        isValidOptionalString(data, 'reporterMemberId', 1, 128) &&
+        isValidOptionalUrl(data, 'imageUrl') &&
+        isValidOptionalDriveFileId(data, 'imageDriveFileId') &&
+        isValidOptionalString(data, 'imageName', 1, 255) &&
+        isValidOptionalUrl(data, 'resolvedImageUrl') &&
+        isValidOptionalDriveFileId(data, 'resolvedImageDriveFileId') &&
+        isValidString(data.province, 1, 100) &&
+        isValidString(data.district, 1, 100) &&
+        isValidString(data.departmentId, 1, 64) &&
+        isValidOptionalString(data, 'assignedOfficer', 1, 120) &&
+        data.upvotes is int && data.upvotes >= 0 &&
+        isValidTimestampOrString(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function canCreateComplaint(complaintId, data) {
+      let validIdentity = isAuthenticated()
+        ? ('reporterMemberId' in data && data.reporterMemberId == request.auth.uid)
+        : (allowsAnonymousReports() && data.isAnonymous == true && !('reporterMemberId' in data));
+
+      return isValidComplaint(complaintId, data) &&
+        data.status == 'pending' &&
+        data.upvotes == 0 &&
+        !('resolvedImageUrl' in data) &&
+        !('resolvedImageDriveFileId' in data) &&
+        !('assignedOfficer' in data) &&
+        validIdentity;
+    }
+
+    function validComplaintStatusTransition(prevStatus, nextStatus) {
+      return prevStatus == nextStatus ||
+        (prevStatus == 'pending' && nextStatus in ['inprogress', 'resolved']) ||
+        (prevStatus == 'inprogress' && nextStatus in ['resolved', 'pending']) ||
+        (prevStatus == 'resolved' && nextStatus == 'inprogress');
+    }
+
+    function isOfficerComplaintUpdate(complaintId) {
+      let officerEditableFields = [
+        'status', 'priority', 'departmentId', 'assignedOfficer',
+        'resolvedImageUrl', 'resolvedImageDriveFileId', 'updatedAt'
+      ];
+      return isOfficer() &&
+        isValidComplaint(complaintId, request.resource.data) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(officerEditableFields) &&
+        validComplaintStatusTransition(resource.data.status, request.resource.data.status);
+    }
+
+    function isValidComplaintUpvoteUpdate(complaintId) {
+      let upvotePath = /databases/$(database)/documents/complaints/$(complaintId)/upvotes/$(request.auth.uid);
+      let onlyUpvoteFields = request.resource.data.diff(resource.data).affectedKeys().hasOnly(['upvotes']) ||
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['upvotes', 'updatedAt']) &&
+          isValidTimestamp(request.resource.data.updatedAt)
+        );
+      let isIncrement = request.resource.data.upvotes == resource.data.upvotes + 1 &&
+        !exists(upvotePath) &&
+        existsAfter(upvotePath);
+      let isDecrement = request.resource.data.upvotes == resource.data.upvotes - 1 &&
+        exists(upvotePath) &&
+        !existsAfter(upvotePath);
+
+      return isAuthenticated() &&
+        isValidComplaint(complaintId, request.resource.data) &&
+        onlyUpvoteFields &&
+        math.abs(request.resource.data.upvotes - resource.data.upvotes) == 1 &&
+        (isIncrement || isDecrement);
+    }
+
+    function isValidTimelineEvent(eventId, data) {
+      let requiredFields = ['id', 'date', 'time', 'title', 'description', 'status', 'icon'];
+      let allowedFields = ['id', 'date', 'time', 'title', 'description', 'status', 'officer', 'icon', 'createdAt'];
+
+      return hasRequiredFields(requiredFields) &&
+        hasOnlyAllowedFields(allowedFields) &&
+        isValidString(data.id, 1, 128) && data.id == eventId &&
+        isValidString(data.date, 1, 64) &&
+        isValidString(data.time, 1, 32) &&
+        isValidString(data.title, 1, 200) &&
+        isValidString(data.description, 1, 1000) &&
+        isValidComplaintStatus(data.status) &&
+        isValidOptionalString(data, 'officer', 1, 120) &&
+        isValidString(data.icon, 1, 64) &&
+        (!('createdAt' in data) || isValidTimestamp(data.createdAt));
+    }
+
+    function isValidComment(commentId, data) {
+      let requiredFields = ['id', 'authorId', 'author', 'text', 'role', 'createdAt'];
+      let allowedFields = ['id', 'authorId', 'author', 'text', 'role', 'createdAt'];
+
+      return hasRequiredFields(requiredFields) &&
+        hasOnlyAllowedFields(allowedFields) &&
+        isValidString(data.id, 1, 128) && data.id == commentId &&
+        isValidString(data.authorId, 1, 128) &&
+        isValidString(data.author, 1, 100) &&
+        isValidString(data.text, 1, 2000) &&
+        data.role in ['citizen', 'officer'] &&
+        isValidTimestampOrString(data.createdAt);
+    }
+
+    function isValidUpvoteDoc(userId, data) {
+      return hasRequiredFields(['userId', 'createdAt']) &&
+        hasOnlyAllowedFields(['userId', 'createdAt']) &&
+        isValidString(data.userId, 1, 128) &&
+        data.userId == userId &&
+        isValidTimestamp(data.createdAt);
+    }
+
+    function isUpvoteBatchIncrement(complaintId) {
+      let complaintPath = /databases/$(database)/documents/complaints/$(complaintId);
+      return getAfter(complaintPath).data.upvotes == get(complaintPath).data.upvotes + 1;
+    }
+
+    function isUpvoteBatchDecrement(complaintId) {
+      let complaintPath = /databases/$(database)/documents/complaints/$(complaintId);
+      return !existsAfter(complaintPath) ||
+        getAfter(complaintPath).data.upvotes == get(complaintPath).data.upvotes - 1;
+    }
+
+    function isValidPoll(pollId, data) {
+      let requiredFields = [
+        'id', 'title', 'description', 'locationName', 'coordinates',
+        'category', 'agreeCount', 'disagreeCount', 'totalVotes',
+        'proposalBy', 'endDate'
+      ];
+      let allowedFields = [
+        'id', 'title', 'description', 'locationName', 'coordinates',
+        'category', 'agreeCount', 'disagreeCount', 'totalVotes',
+        'proposalBy', 'endDate', 'isLocked', 'createdAt', 'updatedAt'
+      ];
+
+      return hasRequiredFields(requiredFields) &&
+        hasOnlyAllowedFields(allowedFields) &&
+        isValidString(data.id, 1, 128) && data.id == pollId &&
+        isValidString(data.title, 1, 300) &&
+        isValidString(data.description, 1, 3000) &&
+        isValidString(data.locationName, 1, 200) &&
+        isValidCoordinates(data.coordinates) &&
+        data.category in ['safety', 'traffic', 'environment', 'pedestrian'] &&
+        data.agreeCount is int && data.agreeCount >= 0 &&
+        data.disagreeCount is int && data.disagreeCount >= 0 &&
+        data.totalVotes is int && data.totalVotes >= 0 &&
+        data.totalVotes == data.agreeCount + data.disagreeCount &&
+        isValidString(data.proposalBy, 1, 150) &&
+        isValidTimestampOrString(data.endDate) &&
+        (!('isLocked' in data) || data.isLocked is bool) &&
+        (!('createdAt' in data) || isValidTimestamp(data.createdAt)) &&
+        (!('updatedAt' in data) || isValidTimestamp(data.updatedAt));
+    }
+
+    function isPollUnlocked(pollId) {
+      return parentPollExists(pollId) &&
+        get(/databases/$(database)/documents/civic_polls/$(pollId)).data.get('isLocked', false) != true;
+    }
+
+    function isValidPollVote(userId, data) {
+      return hasRequiredFields(['userId', 'vote', 'createdAt']) &&
+        hasOnlyAllowedFields(['userId', 'vote', 'createdAt', 'updatedAt']) &&
+        isValidString(data.userId, 1, 128) &&
+        data.userId == userId &&
+        data.vote in ['agree', 'disagree'] &&
+        isValidTimestamp(data.createdAt) &&
+        (!('updatedAt' in data) || isValidTimestamp(data.updatedAt));
+    }
+
+    function isValidCitizenProfile(userId, data) {
+      let requiredFields = ['displayName', 'email', 'homeProvince', 'avatarPose', 'joinedAt'];
+      let allowedFields = [
+        'id', 'displayName', 'email', 'phone', 'homeProvince',
+        'avatarPose', 'joinedAt', 'role', 'updatedAt'
+      ];
+
+      return hasRequiredFields(requiredFields) &&
+        hasOnlyAllowedFields(allowedFields) &&
+        (!('id' in data) || (isValidString(data.id, 1, 128) && data.id == userId)) &&
+        isValidString(data.displayName, 1, 100) &&
+        isValidEmail(data.email) &&
+        isValidOptionalString(data, 'phone', 0, 30) &&
+        isValidString(data.homeProvince, 1, 100) &&
+        isValidString(data.avatarPose, 1, 50) &&
+        isValidTimestampOrString(data.joinedAt) &&
+        (!('role' in data) || data.role == 'citizen') &&
+        (!('updatedAt' in data) || isValidTimestamp(data.updatedAt));
+    }
+
+    function isValidCheckin(dateKey, userId, data) {
+      return hasRequiredFields(['checkedInAt']) &&
+        hasOnlyAllowedFields(['dateKey', 'userId', 'checkedInAt', 'xpAwarded']) &&
+        (!('dateKey' in data) || data.dateKey == dateKey) &&
+        (!('userId' in data) || data.userId == userId) &&
+        isValidTimestamp(data.checkedInAt) &&
+        (!('xpAwarded' in data) || (data.xpAwarded is int && data.xpAwarded >= 0 && data.xpAwarded <= 100));
+    }
+
+    function isValidOfficer(officerId, data) {
+      let requiredFields = ['id', 'email', 'name', 'role', 'departmentId', 'badgeCode', 'avatarPose'];
+      let allowedFields = [
+        'id', 'email', 'name', 'role', 'departmentId',
+        'badgeCode', 'avatarPose', 'isActive', 'createdAt', 'updatedAt'
+      ];
+
+      return hasRequiredFields(requiredFields) &&
+        hasOnlyAllowedFields(allowedFields) &&
+        isValidString(data.id, 1, 128) && data.id == officerId &&
+        isValidEmail(data.email) &&
+        isValidString(data.name, 1, 120) &&
+        isValidString(data.role, 1, 150) &&
+        isValidString(data.departmentId, 1, 64) &&
+        isValidString(data.badgeCode, 1, 64) &&
+        isValidString(data.avatarPose, 1, 200) &&
+        (!('isActive' in data) || data.isActive is bool) &&
+        (!('createdAt' in data) || isValidTimestamp(data.createdAt)) &&
+        (!('updatedAt' in data) || isValidTimestamp(data.updatedAt));
+    }
+
+    function isValidXpRewardsMap(xp) {
+      let xpKeys = [
+        'DAILY_CHECKIN', 'UPVOTE', 'COMMENT', 'POLL_VOTE',
+        'REPORT', 'PHOTO_BONUS', 'RESOLVED_BONUS'
+      ];
+      return xp is map &&
+        xp.keys().hasAll(xpKeys) &&
+        xp.keys().hasOnly(xpKeys) &&
+        xp.DAILY_CHECKIN is int && xp.DAILY_CHECKIN >= 0 && xp.DAILY_CHECKIN <= 1000 &&
+        xp.UPVOTE is int && xp.UPVOTE >= 0 && xp.UPVOTE <= 1000 &&
+        xp.COMMENT is int && xp.COMMENT >= 0 && xp.COMMENT <= 1000 &&
+        xp.POLL_VOTE is int && xp.POLL_VOTE >= 0 && xp.POLL_VOTE <= 1000 &&
+        xp.REPORT is int && xp.REPORT >= 0 && xp.REPORT <= 1000 &&
+        xp.PHOTO_BONUS is int && xp.PHOTO_BONUS >= 0 && xp.PHOTO_BONUS <= 1000 &&
+        xp.RESOLVED_BONUS is int && xp.RESOLVED_BONUS >= 0 && xp.RESOLVED_BONUS <= 1000;
+    }
+
+    function isValidSystemSettings(data) {
+      let requiredFields = [
+        'platformName', 'defaultMapStyle', 'maintenanceMode', 'maintenanceMessage',
+        'allowAnonymousReports', 'autoAssignDepartment', 'enableAir4ThaiLayer',
+        'slaDefaultHours', 'maxUploadSizeMb', 'xpRewards'
+      ];
+      let allowedFields = [
+        'platformName', 'defaultMapStyle', 'maintenanceMode', 'maintenanceMessage',
+        'allowAnonymousReports', 'autoAssignDepartment', 'enableAir4ThaiLayer',
+        'slaDefaultHours', 'maxUploadSizeMb', 'xpRewards', 'updatedAt', 'updatedBy'
+      ];
+
+      return hasRequiredFields(requiredFields) &&
+        hasOnlyAllowedFields(allowedFields) &&
+        isValidString(data.platformName, 1, 100) &&
+        isValidString(data.defaultMapStyle, 1, 50) &&
+        data.maintenanceMode is bool &&
+        isValidString(data.maintenanceMessage, 0, 500) &&
+        data.allowAnonymousReports is bool &&
+        data.autoAssignDepartment is bool &&
+        data.enableAir4ThaiLayer is bool &&
+        data.slaDefaultHours is int && data.slaDefaultHours >= 1 && data.slaDefaultHours <= 720 &&
+        data.maxUploadSizeMb is number && data.maxUploadSizeMb >= 1 && data.maxUploadSizeMb <= 50 &&
+        isValidXpRewardsMap(data.xpRewards) &&
+        (!('updatedAt' in data) || isValidTimestamp(data.updatedAt)) &&
+        isValidOptionalString(data, 'updatedBy', 1, 128);
+    }
+
+    function isValidUserPreferences(data) {
+      return hasOnlyAllowedFields(['theme', 'mapStyle', 'updatedAt']) &&
+        data.keys().size() >= 1 &&
+        (!('theme' in data) || data.theme in ['light', 'dark']) &&
+        (!('mapStyle' in data) || isValidString(data.mapStyle, 1, 50)) &&
+        (!('updatedAt' in data) || isValidTimestamp(data.updatedAt));
+    }
+
+    // ========================================================================
+    // 1. Complaints & Subcollections
+    // ========================================================================
+
+    match /complaints/{complaintId} {
+      // Map visitors and citizens can read complaints
+      allow read: if true;
+
+      // Signed-in citizens (or anonymous reporters when globally enabled) can file complaints
+      allow create: if canCreateComplaint(complaintId, request.resource.data);
+
+      // Officers can triage/resolve complaints; signed-in users can toggle upvotes atomically with upvotes/{uid}
+      allow update: if isOfficerComplaintUpdate(complaintId) ||
+        isValidComplaintUpvoteUpdate(complaintId);
+
+      // Only Super Admin officers can permanently delete complaints
+      allow delete: if isSuperAdmin();
+
+      // 1a. Complaint Timeline Events
+      match /timeline/{eventId} {
+        allow read: if true;
+
+        allow create: if isOfficer() &&
+          parentComplaintExists(complaintId) &&
+          isValidTimelineEvent(eventId, request.resource.data);
+
+        allow update: if isOfficer() &&
+          isValidTimelineEvent(eventId, request.resource.data) &&
+          areImmutableFieldsUnchanged(['id', 'createdAt']);
+
+        allow delete: if isOfficer();
+      }
+
+      // 1b. Complaint Comments
+      match /comments/{commentId} {
+        allow read: if true;
+
+        allow create: if isAuthenticated() &&
+          parentComplaintExists(complaintId) &&
+          isValidComment(commentId, request.resource.data) &&
+          request.resource.data.authorId == request.auth.uid &&
+          (
+            request.resource.data.role == 'citizen' ||
+            (request.resource.data.role == 'officer' && isOfficer())
+          );
+
+        allow update: if false;
+
+        allow delete: if isAuthenticated() &&
+          (resource.data.authorId == request.auth.uid || isOfficer());
+      }
+
+      // 1c. Complaint Upvote Tracking
+      match /upvotes/{userId} {
+        allow read: if isAuthenticated();
+
+        allow create: if isOwner(userId) &&
+          parentComplaintExists(complaintId) &&
+          isValidUpvoteDoc(userId, request.resource.data) &&
+          isUpvoteBatchIncrement(complaintId);
+
+        allow update: if false;
+
+        allow delete: if (isOwner(userId) && isUpvoteBatchDecrement(complaintId)) ||
+          isSuperAdmin();
+      }
+    }
+
+    // ========================================================================
+    // 2. Civic Polls & Votes
+    // ========================================================================
+
+    match /civic_polls/{pollId} {
+      allow read: if true;
+
+      allow create: if isOfficer() &&
+        isValidPoll(pollId, request.resource.data);
+
+      allow update: if isOfficer() &&
+        isValidPoll(pollId, request.resource.data) &&
+        areImmutableFieldsUnchanged(['id', 'createdAt']);
+
+      allow delete: if isOfficer();
+
+      match /votes/{userId} {
+        allow read: if isOwner(userId) || isOfficer();
+
+        allow create: if isOwner(userId) &&
+          isPollUnlocked(pollId) &&
+          isValidPollVote(userId, request.resource.data);
+
+        allow update: if isOwner(userId) &&
+          isPollUnlocked(pollId) &&
+          isValidPollVote(userId, request.resource.data) &&
+          areImmutableFieldsUnchanged(['userId', 'createdAt']);
+
+        allow delete: if isSuperAdmin();
+      }
+    }
+
+    // ========================================================================
+    // 3. Citizen Profiles & Daily Check-ins (Contains PII — Owner or Officer only)
+    // ========================================================================
+
+    match /citizens/{userId} {
+      allow read: if isOwner(userId) || isOfficer();
+
+      allow create: if isOwner(userId) &&
+        isValidCitizenProfile(userId, request.resource.data);
+
+      allow update: if isOwner(userId) &&
+        isValidCitizenProfile(userId, request.resource.data) &&
+        areImmutableFieldsUnchanged(['id', 'joinedAt', 'role']);
+
+      allow delete: if isOwner(userId) || isSuperAdmin();
+
+      match /checkins/{dateKey} {
+        allow read: if isOwner(userId) || isOfficer();
+
+        // Create once per YYYY-MM-DD key
+        allow create: if isOwner(userId) &&
+          isValidDateKey(dateKey) &&
+          (
+            exists(/databases/$(database)/documents/citizens/$(userId)) ||
+            existsAfter(/databases/$(database)/documents/citizens/$(userId))
+          ) &&
+          isValidCheckin(dateKey, userId, request.resource.data);
+
+        allow update: if false;
+        allow delete: if isSuperAdmin();
+      }
+    }
+
+    // ========================================================================
+    // 4. Officers Directory
+    // ========================================================================
+
+    match /officers/{officerId} {
+      allow read: if isOwner(officerId) || isOfficer();
+
+      allow create: if isSuperAdmin() &&
+        isValidOfficer(officerId, request.resource.data);
+
+      allow update: if isSuperAdmin() &&
+        isValidOfficer(officerId, request.resource.data) &&
+        areImmutableFieldsUnchanged(['id', 'createdAt']);
+
+      allow delete: if isSuperAdmin();
+    }
+
+    // ========================================================================
+    // 5. System Settings
+    // ========================================================================
+
+    match /system_settings/{settingId} {
+      allow read: if true;
+
+      allow create, update: if isAdminOfficer() &&
+        isValidSystemSettings(request.resource.data);
+
+      allow delete: if false;
+    }
+
+    // ========================================================================
+    // 6. User Preferences
+    // ========================================================================
+
+    match /user_preferences/{userId} {
+      allow read: if isOwner(userId);
+
+      allow create, update: if isOwner(userId) &&
+        isValidUserPreferences(request.resource.data);
+
+      allow delete: if isOwner(userId);
+    }
+
+    // ========================================================================
+    // 7. Default Deny-All Fallback
+    // ========================================================================
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
