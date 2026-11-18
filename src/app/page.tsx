@@ -173,6 +173,7 @@ export default function Home() {
 
   // Emergency SOS Hub Modal
   const [isSosModalOpen, setIsSosModalOpen] = useState<boolean>(false);
+  const [sosSearchCoord, setSosSearchCoord] = useState<[number, number] | undefined>();
 
   // Report mode: user is selecting location on map (also supports /?report=1 deep-link)
   const [isReportMode, setIsReportMode] = useState<boolean>(false);
@@ -680,7 +681,10 @@ export default function Home() {
             civicPolls={civicPolls}
             onVotePoll={handleVotePoll}
             userPollVotes={userPollVotes}
-            onOpenSosModal={() => setIsSosModalOpen(true)}
+            onOpenSosModal={(coordinates) => {
+              setSosSearchCoord(coordinates);
+              setIsSosModalOpen(true);
+            }}
             onSelectProvince={handleSelectMapProvince}
             onSelectDistrict={handleSelectMapDistrict}
             onSelectTambon={handleSelectMapTambon}
@@ -817,9 +821,9 @@ export default function Home() {
       {/* Emergency SOS Hub Modal */}
       <EmergencySosModal
         isOpen={isSosModalOpen}
-        onClose={() => setIsSosModalOpen(false)}
+        onClose={() => { setIsSosModalOpen(false); setSosSearchCoord(undefined); }}
         currentCoord={
-          pendingCoord || (effectiveTargetCity ? effectiveTargetCity.center : [100.5018, 13.7563])
+          sosSearchCoord ?? pendingCoord ?? (effectiveTargetCity ? effectiveTargetCity.center : [100.5018, 13.7563])
         }
         onSelectEmergencyPoint={handleSelectEmergencyPoint}
       />

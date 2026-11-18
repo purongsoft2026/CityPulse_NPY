@@ -3,7 +3,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { JKIcon } from "@/components/ui/jk-icon";
 import {
-  EMERGENCY_POINTS,
   formatDistance,
   haversineDistanceKm,
   type EmergencyPoint,
@@ -75,6 +74,12 @@ const POINT_META: Record<
     badgeBg: "bg-amber-500",
     cardBg: "bg-amber-50/50 dark:bg-amber-950/15 border-amber-200/70 dark:border-amber-800/30",
   },
+  rescue: {
+    label: "กู้ชีพ / กู้ภัย",
+    icon: "truck-medical",
+    badgeBg: "bg-teal-700",
+    cardBg: "bg-teal-50 dark:bg-teal-950/20 border-teal-200 dark:border-teal-800",
+  },
   police: {
     label: "ตำรวจ",
     icon: "shield-halved",
@@ -124,8 +129,10 @@ export function EmergencySosModal({
       searchRadiusKm,
       controller.signal,
     ).then((res) => {
-      if (cancelled || !res) return;
-      setNearbyState({ key: activeQueryKey, data: res });
+      if (cancelled) return;
+      setNearbyState({ key: activeQueryKey, data: res ?? {
+        ok: false, source: "fallback", center: activeCoord, areaLabel: "", points: [],
+      } });
     });
 
     return () => {
@@ -136,8 +143,8 @@ export function EmergencySosModal({
 
   const isLoadingPoints = isOpen && nearbyState?.key !== activeQueryKey;
   const activePoints = useMemo(
-    () => (nearbyState?.data?.points?.length ? nearbyState.data.points : EMERGENCY_POINTS),
-    [nearbyState],
+    () => nearbyState?.key === activeQueryKey ? nearbyState.data.points : [],
+    [nearbyState, activeQueryKey],
   );
   const liveSource = nearbyState?.data?.source ?? "fallback";
   const liveAreaLabel = nearbyState?.data?.areaLabel ?? "";
@@ -149,6 +156,7 @@ export function EmergencySosModal({
       hospital: 0,
       fire_station: 0,
       police: 0,
+      rescue: 0,
     };
     for (const pt of activePoints) {
       counts[pt.type] += 1;
@@ -423,6 +431,7 @@ export function EmergencySosModal({
                 { key: "hospital", label: "โรงพยาบาล" },
                 { key: "police", label: "ตำรวจ" },
                 { key: "fire_station", label: "ดับเพลิง" },
+                { key: "rescue", label: "กู้ชีพ / กู้ภัย" },
                 { key: "aed", label: "ตู้ AED" },
               ] as const).map((tab) => (
                 <button
@@ -525,7 +534,7 @@ export function EmergencySosModal({
                           className="px-2.5 py-1.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-[10px] font-black shadow-xs transition flex items-center gap-1"
                         >
                           <JKIcon name="phone" className="text-[9px]" />
-                          <span>โทร</span>
+                          <span>{["1669", "191", "199"].includes(point.phone) ? "สายด่วน" : "โทร"} {point.phone}</span>
                         </a>
                       )}
                       <a

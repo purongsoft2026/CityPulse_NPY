@@ -1189,7 +1189,7 @@ export type CityLayerKey = "complaints" | "emergency" | "polls" | "cctv" | "envi
 export interface EmergencyPoint {
   id: string;
   name: string;
-  type: "aed" | "hospital" | "fire_station" | "police";
+  type: "aed" | "hospital" | "fire_station" | "police" | "rescue";
   locationName: string;
   coordinates: [number, number];
   phone?: string;

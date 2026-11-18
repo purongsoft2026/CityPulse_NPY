@@ -49,13 +49,6 @@ interface OverpassElement {
   tags?: Record<string, string>;
 }
 
-const DEFAULT_HOTLINE: Record<EmergencyPoint["type"], string> = {
-  hospital: "1669",
-  police: "191",
-  fire_station: "199",
-  aed: "1669",
-};
-
 function formatPhotonAddress(p: NonNullable<PhotonFeature["properties"]>): string {
   const parts = [p.street, p.district || p.locality, p.county || p.city, p.state]
     .map((s) => s?.trim())
@@ -121,26 +114,29 @@ async function queryPhotonCategory(
       type: mappedType,
       locationName: formatPhotonAddress(props),
       coordinates: [rLng, rLat],
-      phone: DEFAULT_HOTLINE[mappedType],
       instruction:
         mappedType === "hospital"
           ? "หน่วยแพทย์ฉุกเฉิน/โรงพยาบาลในพื้นที่ (OpenStreetMap)"
           : mappedType === "police"
             ? "สถานีตำรวจ/จุดบริการประชาชนในพื้นที่"
             : "หน่วยป้องกันและบรรเทาสาธารณภัย",
-      is24h: mappedType === "hospital" || mappedType === "police" || mappedType === "fire_station",
+      is24h: false,
     });
   }
 
   return points;
 }
 
-async function queryOverpassAeds(
+async function queryOverpassServices(
   lat: number,
   lng: number,
   radiusMeters: number,
 ): Promise<EmergencyPoint[]> {
-  const query = `[out:json][timeout:4];node["emergency"="defibrillator"](around:${radiusMeters},${lat},${lng});out tags 15;`;
+  const area = `(around:${radiusMeters},${lat},${lng})`;
+  const query = `[out:json][timeout:5];(
+    nwr["amenity"~"^(hospital|police|fire_station)$"]${area};
+    nwr["emergency"~"^(ambulance_station|rescue_station|defibrillator)$"]${area};
+  );out center 160;`;
   const mirrors = [
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
@@ -168,24 +164,25 @@ async function queryOverpassAeds(
           const eLng = el.lon ?? el.center?.lon;
           if (typeof eLat !== "number" || typeof eLng !== "number") return null;
           const tags = el.tags ?? {};
-          const name =
-            tags["name:th"] ||
-            tags.name ||
-            tags["defibrillator:location"] ||
-            "จุดติดตั้งเครื่องกระตุกหัวใจ AED";
-          const loc =
-            tags["defibrillator:location:th"] ||
-            tags["defibrillator:location"] ||
-            tags["addr:street"] ||
-            "พื้นที่สาธารณะ (OpenStreetMap)";
+          const types: Record<string, EmergencyPoint["type"]> = {
+            hospital: "hospital", police: "police", fire_station: "fire_station",
+            ambulance_station: "rescue", rescue_station: "rescue", defibrillator: "aed",
+          };
+          const type = types[tags.emergency] ?? types[tags.amenity];
+          if (!type) return null;
+          const name = tags["name:th"] || tags.name || tags["defibrillator:location"] ||
+            (type === "aed" ? "จุดติดตั้งเครื่องกระตุกหัวใจ AED" : "");
+          if (!name) return null;
+          const rawPhone = (tags["contact:phone"] || tags.phone || "").split(";")[0].trim();
+          const digits = rawPhone.replace(/[\s().-]/g, "");
+          const phone = /^\+?\d{7,15}$/.test(digits) ? rawPhone : undefined;
+          const address = [tags["addr:housenumber"], tags["addr:street"],
+            tags["addr:subdistrict"], tags["addr:district"], tags["addr:province"]].filter(Boolean).join(" ");
           return {
-            id: `osm-aed-${el.id}`,
-            name,
-            type: "aed",
-            locationName: loc,
-            coordinates: [eLng, eLat],
-            phone: tags.phone || "1669",
-            instruction: tags.indoor === "yes" ? "ติดตั้งภายในอาคาร" : tags.description || undefined,
+            id: `osm-${type}-${el.type}-${el.id}`,
+            name, type, locationName: address || tags["defibrillator:location"] || "OpenStreetMap",
+            coordinates: [eLng, eLat], phone,
+            instruction: type === "aed" && tags.indoor === "yes" ? "ติดตั้งภายในอาคาร" : undefined,
             is24h: tags.opening_hours === "24/7",
           };
         })
@@ -225,14 +222,14 @@ export async function GET(request: NextRequest) {
   const lng = Number(searchParams.get("lng") ?? "100.5018");
   const radiusKm = Math.min(40, Math.max(5, Number(searchParams.get("radiusKm") ?? "20") || 20));
 
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
     return NextResponse.json(
-      { ok: false, source: "fallback", center: [100.5018, 13.7563], areaLabel: "ประเทศไทย", points: EMERGENCY_POINTS },
+      { ok: false, source: "fallback", center: [100.5018, 13.7563], areaLabel: "ประเทศไทย", points: [] },
       { status: 400 },
     );
   }
 
-  const cacheKey = `${lat.toFixed(2)}|${lng.toFixed(2)}|${radiusKm}`;
+  const cacheKey = `${lat.toFixed(5)}|${lng.toFixed(5)}|${radiusKm}`;
   const cached = EMERGENCY_CACHE.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     return NextResponse.json(cached.payload, {
@@ -277,23 +274,23 @@ export async function GET(request: NextRequest) {
         "fire_station",
         controller.signal,
       ),
-      queryOverpassAeds(lat, lng, Math.round(radiusKm * 1000)),
+      queryOverpassServices(lat, lng, Math.round(radiusKm * 1000)),
     ]);
 
     const livePoints: EmergencyPoint[] = [
+      ...(aedRes.status === "fulfilled" ? aedRes.value : []),
       ...(hospRes.status === "fulfilled" ? hospRes.value : []),
       ...(policeRes.status === "fulfilled" ? policeRes.value : []),
       ...(fireRes.status === "fulfilled" ? fireRes.value : []),
-      ...(aedRes.status === "fulfilled" ? aedRes.value : []),
     ];
 
     const nearbyCurated = EMERGENCY_POINTS.filter(
       (pt) => haversineDistanceKm(center, pt.coordinates) <= 35,
     );
 
-    const combined = deduplicatePoints([...nearbyCurated, ...livePoints], center, radiusKm * 1.6);
+    const combined = deduplicatePoints([...livePoints, ...nearbyCurated], center, radiusKm);
     const hasLive = livePoints.length > 0;
-    const finalPoints = combined.length > 0 ? combined.slice(0, 30) : EMERGENCY_POINTS;
+    const finalPoints = combined.slice(0, 60);
 
     const areaTokens = (livePoints[0]?.locationName ?? "").split(" · ").filter(Boolean);
     const areaLabel = areaTokens.slice(-2).join(" · ") || "พื้นที่ใกล้พิกัดที่เลือก";
@@ -306,6 +303,7 @@ export async function GET(request: NextRequest) {
       points: finalPoints,
     };
 
+    if (EMERGENCY_CACHE.size >= 250) EMERGENCY_CACHE.delete(EMERGENCY_CACHE.keys().next().value!);
     EMERGENCY_CACHE.set(cacheKey, {
       expiresAt: Date.now() + CACHE_TTL_MS,
       payload,
@@ -319,8 +317,8 @@ export async function GET(request: NextRequest) {
       ok: true,
       source: "fallback" as const,
       center,
-      areaLabel: "ข้อมูลสำรองส่วนกลาง",
-      points: EMERGENCY_POINTS,
+      areaLabel: "พื้นที่ใกล้พิกัดที่เลือก",
+      points: EMERGENCY_POINTS.filter((point) => haversineDistanceKm(center, point.coordinates) <= radiusKm),
     });
   } finally {
     clearTimeout(timeout);

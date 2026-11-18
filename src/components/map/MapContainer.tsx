@@ -20,7 +20,6 @@ import {
   type CityViewport,
   type CityLayerKey,
   type EmergencyPoint,
-  EMERGENCY_POINTS,
   type CivicPoll,
   type CctvPoint,
   CCTV_POINTS,
@@ -107,7 +106,7 @@ interface MapContainerProps {
   civicPolls?: CivicPoll[];
   onVotePoll?: (pollId: string, choice: "agree" | "disagree") => void;
   userPollVotes?: Record<string, "agree" | "disagree">;
-  onOpenSosModal?: () => void;
+  onOpenSosModal?: (coordinates?: [number, number]) => void;
   onSelectProvince?: (province: HoveredProvinceInfo | null) => void;
   onSelectDistrict?: (district: HoveredDistrictInfo | null) => void;
   onSelectTambon?: (tambon: HoveredTambonInfo | null) => void;
@@ -225,7 +224,7 @@ export function MapContainer({
   const [burnScarMatched, setBurnScarMatched] = useState(0);
   const [isLoadingBurnScars, setIsLoadingBurnScars] = useState(false);
   const [nearbyEmergencyPoints, setNearbyEmergencyPoints] =
-    useState<EmergencyPoint[]>(EMERGENCY_POINTS);
+    useState<EmergencyPoint[]>([]);
   const [nearbyCctvPoints, setNearbyCctvPoints] = useState<CctvPoint[]>(CCTV_POINTS);
   const [nearbyCenterTick, setNearbyCenterTick] = useState(0);
 
@@ -419,17 +418,17 @@ export function MapContainer({
     if (activeLayer !== "emergency") return;
     const controller = new AbortController();
     const mapCenter = mapRef.current?.getCenter();
-    const targetLat = mapCenter?.lat ?? viewport.lat;
-    const targetLng = mapCenter?.lng ?? viewport.lng;
+    const targetLat = pendingCoord?.[1] ?? selectedComplaint?.coordinates[1] ?? mapCenter?.lat ?? viewport.lat;
+    const targetLng = pendingCoord?.[0] ?? selectedComplaint?.coordinates[0] ?? mapCenter?.lng ?? viewport.lng;
 
     fetchNearbyEmergencyPoints(targetLat, targetLng, 20, controller.signal).then((res) => {
-      if (!controller.signal.aborted && res?.points?.length) {
-        setNearbyEmergencyPoints(res.points);
+      if (!controller.signal.aborted) {
+        setNearbyEmergencyPoints(res?.points ?? []);
       }
     });
 
     return () => controller.abort();
-  }, [activeLayer, viewport.lat, viewport.lng, nearbyCenterTick]);
+  }, [activeLayer, viewport.lat, viewport.lng, nearbyCenterTick, pendingCoord, selectedComplaint]);
 
   useEffect(() => {
     if (activeLayer !== "cctv") return;
@@ -1099,18 +1098,21 @@ export function MapContainer({
               hospital: "truck-medical",
               fire_station: "fire-extinguisher",
               police: "shield-halved",
+              rescue: "truck-medical",
             };
             const colorMap = {
               aed: "#10b981",
               hospital: "#ef4444",
               fire_station: "#f59e0b",
               police: "#3b82f6",
+              rescue: "#0f766e",
             };
             const labelMap = {
               aed: "ตู้กระตุกหัวใจ AED",
               hospital: "โรงพยาบาลฉุกเฉิน",
               fire_station: "ดับเพลิงและกู้ภัย",
               police: "สถานีตำรวจ",
+              rescue: "หน่วยกู้ชีพและกู้ภัย",
             };
             const color = colorMap[emg.type];
             const icon = iconMap[emg.type];
@@ -1204,7 +1206,7 @@ export function MapContainer({
                           className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-black whitespace-nowrap shadow-md cursor-pointer transition active:scale-95"
                         >
                           <JKIcon name="phone" className="text-xs shrink-0" />
-                          <span>โทร {emg.phone}</span>
+                          <span>{["1669", "191", "199"].includes(emg.phone) ? "สายด่วน" : "โทร"} {emg.phone}</span>
                         </a>
                       )}
 
@@ -1222,12 +1224,16 @@ export function MapContainer({
                       </button>
                     </div>
 
+                    <a className="block text-center text-xs font-semibold text-cyan-200"
+                      href={`https://www.google.com/maps/dir/?api=1&destination=${emg.coordinates[1]},${emg.coordinates[0]}`}
+                      target="_blank" rel="noopener noreferrer">นำทางด้วย Google Maps</a>
+
                     {onOpenSosModal && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedEmergencyPoint(null);
-                          onOpenSosModal();
+                          onOpenSosModal(emg.coordinates);
                         }}
                         className="w-full py-1.5 text-[11px] font-bold whitespace-nowrap text-red-300 hover:text-white flex items-center justify-center gap-1 transition cursor-pointer"
                       >
@@ -1853,6 +1859,18 @@ export function MapContainer({
               environment: hasLoadedEnvData ? airStations.length + earthquakes.length : undefined,
             }}
           />
+        )}
+
+        {activeLayer === "emergency" && !isReportMode && onOpenSosModal && (
+          <button type="button"
+            className="pointer-events-auto rounded-full bg-teal-700 px-4 py-2 text-xs font-bold text-white shadow"
+            onClick={() => {
+              const center = mapRef.current?.getCenter();
+              onOpenSosModal(pendingCoord ?? selectedComplaint?.coordinates ??
+                (center ? [center.lng, center.lat] : [viewport.lng, viewport.lat]));
+            }}>
+            ดูสถานที่ฉุกเฉินใกล้เคียง
+          </button>
         )}
 
         {isReportMode && (
