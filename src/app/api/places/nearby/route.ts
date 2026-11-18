@@ -3,10 +3,21 @@ import { haversineDistanceKm } from "@/data/map-data";
 import type { NearbyCategory, NearbyPlace } from "@/lib/nearby-places";
 
 const filters = {
-  fuel: '["amenity"="fuel"]',
-  shop: '["shop"~"^(supermarket|convenience|department_store|mall|general|greengrocer|grocery)$"]',
-  food: '["amenity"~"^(restaurant|fast_food|cafe|food_court)$"]',
-} satisfies Record<NearbyCategory, string>;
+  fuel: ['["amenity"="fuel"]'],
+  shop: ['["shop"~"^(supermarket|convenience|department_store|mall|general|greengrocer|grocery)$"]'],
+  food: ['["amenity"~"^(restaurant|fast_food|cafe|food_court)$"]'],
+  carTyre: [
+    '["shop"="tyres"]["repair"="yes"]',
+    '["car:tyres"~"^(yes|repair)$"]',
+    '["shop"="car_repair"]["service:vehicle:tyres"="yes"]',
+    '["name"~"ปะยางรถยนต์|ปะยางรถเก๋ง"]',
+  ],
+  motorcycleTyre: [
+    '["motorcycle:tyres"~"^(yes|repair)$"]',
+    '["shop"="motorcycle_repair"]["service:vehicle:tyres"="yes"]',
+    '["name"~"ปะยางมอเตอร์ไซ|ปะยางรถจักรยานยนต์"]',
+  ],
+} satisfies Record<NearbyCategory, string[]>;
 
 interface Element {
   id: number;
@@ -28,8 +39,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "พิกัดหรือหมวดหมู่ไม่ถูกต้อง" }, { status: 400 });
   }
 
-  const filter = filters[category as NearbyCategory];
-  const query = `[out:json][timeout:6];nwr${filter}(around:${radius * 1000},${lat},${lng});out center;`;
+  const area = `(around:${radius * 1000},${lat},${lng})`;
+  const selectors = filters[category as NearbyCategory].map((filter) => `nwr${filter}${area};`);
+  const query = `[out:json][timeout:6];(${selectors.join("")});out center;`;
   for (const endpoint of ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"]) {
     try {
       const response = await fetch(endpoint, {
